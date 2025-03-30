@@ -6,26 +6,56 @@ from datetime import datetime
 import signal
 import sys
 import subprocess
-from threading import Timer
+from threading import Timer, Lock
 import time
+import logging
 
 app = Flask(__name__)
 
+# Настройка логирования
+logging.basicConfig(level=logging.DEBUG)
+logger = logging.getLogger(__name__)
+
+# Добавляем обработчик для вывода в консоль
+console_handler = logging.StreamHandler()
+console_handler.setLevel(logging.DEBUG)
+formatter = logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s')
+console_handler.setFormatter(formatter)
+logger.addHandler(console_handler)
+
 # Конфигурация
 XML_FILE = "catalog_feed.xml"
-DB_FILE = "catalog.db"
 PORT = 5003
 
+# Блокировка для обновления каталога
+update_lock = Lock()
+
+# Параметры подключения к базе данных
+DB_PARAMS = {
+    'dbname': 'catalog',
+    'user': 'postgres',
+    'password': 'postgres',
+    'host': 'localhost',
+    'port': 5432
+}
+
 # Инициализация базы данных
-db = CatalogDatabase(DB_FILE)
+db = CatalogDatabase(**DB_PARAMS)
 
 def update_catalog():
     """Обновление каталога из XML-фида"""
     if not os.path.exists(XML_FILE):
         raise FileNotFoundError(f'Файл {XML_FILE} не найден')
     
-    parser = FeedParser(XML_FILE, db)
-    parser.parse()
+    # Используем блокировку для предотвращения параллельных обновлений
+    if not update_lock.acquire(blocking=False):
+        raise RuntimeError('Обновление каталога уже выполняется')
+    
+    try:
+        parser = FeedParser(XML_FILE, db)
+        parser.parse()
+    finally:
+        update_lock.release()
 
 @app.route('/')
 def index():
@@ -42,30 +72,9 @@ def update_catalog_route():
         
         stats = db.get_statistics()
         
-        # Запускаем новый процесс
-        subprocess.Popen([sys.executable, __file__])
-        
-        # Завершаем текущий процесс
-        def shutdown():
-            try:
-                # Получаем все процессы на порту 5003
-                result = subprocess.run(['lsof', '-ti', f'tcp:{PORT}'], 
-                                     capture_output=True, text=True)
-                if result.stdout.strip():
-                    # Завершаем все процессы
-                    for pid in result.stdout.strip().split('\n'):
-                        try:
-                            os.kill(int(pid), signal.SIGTERM)
-                        except:
-                            pass
-            except:
-                pass
-        
-        Timer(2.0, shutdown).start()
-        
         return jsonify({
             'success': True,
-            'message': 'Каталог успешно обновлен, сервер перезапускается',
+            'message': 'Каталог успешно обновлен',
             'stats': {
                 **stats,
                 'execution_time': execution_time
@@ -77,17 +86,6 @@ def update_catalog_route():
             'success': False,
             'error': str(e)
         })
-
-@app.route('/api/categories/<category_id>/products')
-def get_products_api(category_id):
-    """API для получения товаров по категории"""
-    try:
-        products = db.get_products_by_category(int(category_id))
-        return jsonify(products)
-    except ValueError:
-        return jsonify({'error': 'Неверный ID категории'}), 400
-    except Exception as e:
-        return jsonify({'error': str(e)}), 500
 
 @app.route('/api/search')
 def search_api():
@@ -116,62 +114,46 @@ def categories_api():
 def get_products(category_id):
     """Получение товаров по категории"""
     try:
-        page = int(request.args.get('page', 1))
-        per_page = int(request.args.get('per_page', 20))
-        products = db.get_products_by_category(int(category_id), page, per_page)
+        logger.debug(f"Получен запрос на товары для категории {category_id}")
+        page = request.args.get('page', 1, type=int)
+        per_page = request.args.get('per_page', 30, type=int)
+        
+        if page < 1 or per_page < 1:
+            logger.error(f"Некорректные параметры пагинации: page={page}, per_page={per_page}")
+            return jsonify({'error': 'Invalid pagination parameters'}), 400
+            
+        logger.debug(f"Параметры пагинации: page={page}, per_page={per_page}")
+        
+        products = db.get_products_by_category(category_id, page, per_page)
+        logger.debug(f"Получено {len(products['items'])} товаров")
+        
         return jsonify(products)
     except Exception as e:
-        return jsonify({'error': str(e)}), 400
+        logger.error(f"Ошибка при получении товаров: {str(e)}", exc_info=True)
+        return jsonify({'error': str(e)}), 500
 
 @app.route('/restart')
 def restart_server():
     """Перезапускает сервер"""
-    try:
-        # Получаем PID текущего процесса
-        pid = os.getpid()
-        
-        # Запускаем новый процесс
-        subprocess.Popen([sys.executable] + sys.argv)
-        
-        # Завершаем текущий процесс
-        def shutdown():
-            os.kill(pid, signal.SIGTERM)
-        
-        # Планируем завершение через 1 секунду
-        Timer(1.0, shutdown).start()
-        
-        return jsonify({
-            'success': True,
-            'message': 'Сервер перезапускается'
-        })
-    
-    except Exception as e:
-        return jsonify({
-            'success': False,
-            'error': str(e)
-        }), 500
+    return jsonify({
+        'success': False,
+        'error': 'Restart is not supported in development mode'
+    }), 500
 
 if __name__ == '__main__':
-    # Завершаем все процессы на порту 5003
     try:
-        result = subprocess.run(['lsof', '-ti', f'tcp:{PORT}'], 
-                             capture_output=True, text=True)
-        if result.stdout.strip():
-            # Завершаем все процессы
-            for pid in result.stdout.strip().split('\n'):
-                try:
-                    os.kill(int(pid), signal.SIGTERM)
-                except:
-                    pass
-        # Даем время на освобождение порта
-        time.sleep(1)
-    except:
-        pass
-    
-    # Всегда обновляем каталог при запуске
-    print("Обновление каталога...")
-    update_catalog()
-    print("Каталог обновлен")
-    
-    # Запускаем сервер
-    app.run(host='0.0.0.0', port=PORT) 
+        # Инициализируем базу данных
+        try:
+            logger.info("Инициализация базы данных...")
+            db = CatalogDatabase(**DB_PARAMS)
+            logger.info("База данных успешно инициализирована")
+        except Exception as e:
+            logger.error(f"Ошибка при инициализации базы данных: {str(e)}")
+            sys.exit(1)
+        
+        # Запускаем сервер
+        logger.info(f"Запуск сервера на порту {PORT}...")
+        app.run(host='localhost', port=PORT, debug=True)
+    except Exception as e:
+        logger.error(f"Критическая ошибка при запуске сервера: {str(e)}")
+        sys.exit(1) 
