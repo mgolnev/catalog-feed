@@ -89,11 +89,11 @@ def get_products_api(category_id):
     except Exception as e:
         return jsonify({'error': str(e)}), 500
 
-@app.route('/api/products/search')
+@app.route('/api/search')
 def search_api():
     """API для поиска товаров"""
     query = request.args.get('q', '').strip()
-    if len(query) < 2:  # Уменьшаем минимальную длину запроса до 2 символов
+    if len(query) < 2:  # Минимальная длина запроса - 2 символа
         return jsonify([])
     
     try:
@@ -111,6 +111,17 @@ def statistics_api():
 def categories_api():
     """API для получения дерева категорий"""
     return jsonify(db.get_category_tree())
+
+@app.route('/api/products/<category_id>')
+def get_products(category_id):
+    """Получение товаров по категории"""
+    try:
+        page = int(request.args.get('page', 1))
+        per_page = int(request.args.get('per_page', 20))
+        products = db.get_products_by_category(int(category_id), page, per_page)
+        return jsonify(products)
+    except Exception as e:
+        return jsonify({'error': str(e)}), 400
 
 @app.route('/restart')
 def restart_server():

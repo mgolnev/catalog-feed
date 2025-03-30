@@ -17,6 +17,7 @@
             flex-direction: column;
             height: 100vh;
             background-color: #f5f5f5;
+            overflow: hidden;
         }
 
         .header {
@@ -28,6 +29,7 @@
         .search-container {
             max-width: 800px;
             margin: 0 auto;
+            position: relative;
         }
 
         .search-input {
@@ -37,6 +39,45 @@
             border-radius: 4px;
             font-size: 16px;
             margin-bottom: 15px;
+        }
+
+        .search-results {
+            position: absolute;
+            width: 100%;
+            background: white;
+            border: 1px solid #ddd;
+            border-radius: 4px;
+            max-height: 400px;
+            overflow-y: auto;
+            display: none;
+            z-index: 1000;
+            top: 55px;
+            box-shadow: 0 4px 6px rgba(0,0,0,0.1);
+        }
+
+        .search-item {
+            padding: 12px;
+            border-bottom: 1px solid #eee;
+            cursor: pointer;
+        }
+
+        .search-item:hover {
+            background: #f5f5f5;
+        }
+
+        .search-item .product-name {
+            font-weight: bold;
+            margin-bottom: 4px;
+        }
+
+        .search-item .product-price {
+            color: #e44d26;
+            font-weight: bold;
+        }
+
+        .search-item .product-article {
+            color: #666;
+            font-size: 0.9em;
         }
 
         .stats {
@@ -61,80 +102,88 @@
             display: flex;
             flex: 1;
             overflow: hidden;
+            padding: 20px;
+            gap: 20px;
+            height: calc(100vh - 150px);
         }
 
         .categories-tree {
             width: 300px;
             padding: 20px;
             background-color: white;
-            border-right: 1px solid #ddd;
+            border-radius: 8px;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
             overflow-y: auto;
+            max-height: 100%;
         }
 
-        .products-view {
-            flex: 1;
-            padding: 20px;
-            background-color: white;
-            overflow-y: auto;
-            display: grid;
-            grid-template-columns: repeat(auto-fill, minmax(250px, 1fr));
-            gap: 20px;
-            align-items: start;
-        }
-
-        .category-item {
+        .tree-item {
             margin: 5px 0;
+            padding: 8px;
             cursor: pointer;
-            padding: 5px;
+            display: flex;
+            align-items: center;
             border-radius: 4px;
             transition: background-color 0.2s;
         }
 
-        .category-item:hover {
-            background-color: #f0f0f0;
+        .tree-item:hover {
+            background: #f5f5f5;
         }
 
-        .category-content {
+        .tree-item.selected {
+            background: #e0e0e0;
+        }
+
+        .tree-toggle {
+            width: 24px;
+            height: 24px;
+            margin-right: 8px;
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            cursor: pointer;
+            font-size: 18px;
+            color: #666;
+        }
+
+        .tree-content {
             margin-left: 20px;
             display: none;
         }
 
-        .category-content.expanded {
+        .tree-content.expanded {
             display: block;
         }
 
-        .toggle-icon {
-            display: inline-block;
-            width: 20px;
-            text-align: center;
-            cursor: pointer;
+        .products-container {
+            flex: 1;
+            display: flex;
+            flex-direction: column;
+            overflow-y: auto;
+            padding-right: 10px;
         }
 
-        .category-name {
-            display: inline-block;
-            margin-left: 5px;
-        }
-
-        .product-count {
-            color: #666;
-            font-size: 0.9em;
-            margin-left: 5px;
+        .products-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(250px, 1fr));
+            gap: 20px;
+            align-content: start;
         }
 
         .product-card {
             border: 1px solid #ddd;
-            padding: 12px;
+            padding: 15px;
             border-radius: 8px;
-            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
             background: white;
             display: flex;
             flex-direction: column;
-            height: 100%;
             transition: transform 0.2s, box-shadow 0.2s;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
         }
 
         .product-card:hover {
-            transform: translateY(-2px);
+            transform: translateY(-4px);
             box-shadow: 0 4px 8px rgba(0,0,0,0.15);
         }
 
@@ -142,28 +191,16 @@
             width: 100%;
             height: 300px;
             object-fit: contain;
-            margin-bottom: 12px;
+            margin-bottom: 15px;
             background-color: #f8f9fa;
             border-radius: 4px;
         }
 
-        .product-info {
-            display: flex;
-            flex-direction: column;
-            gap: 8px;
-            flex-grow: 1;
-        }
-
-        .product-title {
+        .product-name {
             font-size: 14px;
             line-height: 1.4;
-            margin: 0;
-            flex-grow: 1;
-        }
-
-        .product-article {
-            font-size: 12px;
-            color: #666;
+            margin-bottom: 8px;
+            font-weight: bold;
         }
 
         .product-price {
@@ -173,12 +210,9 @@
             margin: 8px 0;
         }
 
-        .no-products {
+        .product-article {
+            font-size: 12px;
             color: #666;
-            font-style: italic;
-            padding: 20px;
-            text-align: center;
-            grid-column: 1 / -1;
         }
 
         .loading {
@@ -187,149 +221,332 @@
             color: #666;
             grid-column: 1 / -1;
         }
+
+        .pagination {
+            grid-column: 1 / -1;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            gap: 15px;
+            margin-top: 20px;
+            padding: 15px;
+            background: white;
+            border-radius: 8px;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+        }
+
+        .pagination button {
+            padding: 8px 16px;
+            border: 1px solid #ddd;
+            background: white;
+            border-radius: 4px;
+            cursor: pointer;
+            font-size: 14px;
+            transition: all 0.2s;
+        }
+
+        .pagination button:hover:not(:disabled) {
+            background: #f5f5f5;
+            border-color: #ccc;
+        }
+
+        .pagination button:disabled {
+            background: #eee;
+            cursor: not-allowed;
+            opacity: 0.7;
+        }
+
+        .pagination span {
+            font-size: 14px;
+            color: #666;
+        }
+
+        .breadcrumbs {
+            margin-bottom: 15px;
+            color: #666;
+            font-size: 14px;
+        }
+
+        .breadcrumbs span:not(:last-child)::after {
+            content: " → ";
+            margin: 0 5px;
+            color: #999;
+        }
+
+        .product-categories {
+            font-size: 12px;
+            color: #666;
+            margin-bottom: 8px;
+        }
     </style>
 </head>
 <body>
     <div class="header">
         <div class="search-container">
-            <input type="text" id="searchInput" class="search-input" placeholder="Поиск товаров...">
-            <div class="stats" id="statistics"></div>
+            <input type="text" class="search-input" placeholder="Поиск товаров...">
+            <div class="search-results"></div>
+            <div class="stats"></div>
         </div>
     </div>
 
     <div class="main-content">
-        <div class="categories-tree" id="categoryTree"></div>
-        <div class="products-view" id="products"></div>
+        <div class="categories-tree"></div>
+        <div class="products-container"></div>
     </div>
 
     <script>
+        let currentCategory = null;
+        let currentPage = 1;
+        let totalPages = 1;
+        let isLoading = false;
+        let categoriesCache = {};
+        let categoryPaths = {};
+
+        // Функция для построения пути категории
+        function buildCategoryPath(categoryId) {
+            if (!categoryPaths[categoryId]) {
+                const path = [];
+                let currentId = categoryId;
+                
+                while (currentId && categoriesCache[currentId]) {
+                    path.unshift(categoriesCache[currentId].name);
+                    currentId = categoriesCache[currentId].parent_id;
+                }
+                
+                categoryPaths[categoryId] = path;
+            }
+            
+            return categoryPaths[categoryId];
+        }
+
         // Загрузка статистики
-        function loadStatistics() {
-            fetch('/api/statistics')
-                .then(response => response.json())
-                .then(data => {
-                    const statsHtml = `
-                        <div class="stats-item">Всего категорий: <span class="stats-number">${data.categories_count}</span></div>
-                        <div class="stats-item">Всего товаров: <span class="stats-number">${data.products_count}</span></div>
-                        <div class="stats-item">Средняя цена: <span class="stats-number">${data.average_price.toFixed(2)} ₽</span></div>
-                    `;
-                    document.getElementById('statistics').innerHTML = statsHtml;
-                })
-                .catch(error => {
-                    console.error('Ошибка загрузки статистики:', error);
-                    document.getElementById('statistics').innerHTML = '<div class="stats-item">Ошибка загрузки статистики</div>';
-                });
+        async function loadStatistics() {
+            try {
+                const response = await fetch('/api/statistics');
+                const data = await response.json();
+                const statsHtml = `
+                    <div class="stats-item">Всего категорий: <span class="stats-number">${data.categories_count}</span></div>
+                    <div class="stats-item">Всего товаров: <span class="stats-number">${data.products_count}</span></div>
+                    <div class="stats-item">Средняя цена: <span class="stats-number">${data.average_price.toFixed(2)} ₽</span></div>
+                `;
+                document.querySelector('.stats').innerHTML = statsHtml;
+            } catch (error) {
+                console.error('Ошибка загрузки статистики:', error);
+            }
         }
 
         // Построение дерева категорий
-        function buildCategoryTree(categories, parentElement = document.getElementById('categoryTree')) {
-            for (const [id, category] of Object.entries(categories)) {
-                const div = document.createElement('div');
-                div.className = 'category-item';
+        async function buildCategoryTree() {
+            try {
+                const response = await fetch('/api/categories');
+                const categories = await response.json();
+                const treeContainer = document.querySelector('.categories-tree');
+                treeContainer.innerHTML = '';
                 
-                const hasChildren = category.children && Object.keys(category.children).length > 0;
-                const toggleIcon = hasChildren ? '▶' : '•';
+                // Кэшируем категории
+                categoriesCache = categories;
                 
-                div.innerHTML = `
-                    <span class="toggle-icon">${toggleIcon}</span>
-                    <span class="category-name">${category.name}</span>
-                    <span class="product-count">(${category.product_count})</span>
-                `;
-
-                if (hasChildren) {
-                    const childrenDiv = document.createElement('div');
-                    childrenDiv.className = 'category-content';
-                    buildCategoryTree(category.children, childrenDiv);
-                    div.appendChild(childrenDiv);
-
-                    div.querySelector('.toggle-icon').addEventListener('click', (e) => {
-                        e.stopPropagation();
-                        const content = div.querySelector('.category-content');
-                        content.classList.toggle('expanded');
-                        div.querySelector('.toggle-icon').textContent = 
-                            content.classList.contains('expanded') ? '▼' : '▶';
-                    });
+                function renderCategory(category) {
+                    const div = document.createElement('div');
+                    const hasChildren = category.children && category.children.length > 0;
+                    
+                    div.innerHTML = `
+                        <div class="tree-item" data-id="${category.id}">
+                            <span class="tree-toggle">${hasChildren ? '+' : ''}</span>
+                            ${category.name} (${category.product_count})
+                        </div>
+                        ${hasChildren ? '<div class="tree-content"></div>' : ''}
+                    `;
+                    
+                    if (hasChildren) {
+                        const content = div.querySelector('.tree-content');
+                        category.children.forEach(child => {
+                            content.appendChild(renderCategory(child));
+                        });
+                    }
+                    
+                    return div;
                 }
-
-                div.addEventListener('click', () => loadProducts(id));
-                parentElement.appendChild(div);
+                
+                Object.values(categories).forEach(category => {
+                    treeContainer.appendChild(renderCategory(category));
+                });
+                
+                // Обработчики событий для дерева
+                treeContainer.addEventListener('click', (e) => {
+                    const treeItem = e.target.closest('.tree-item');
+                    if (!treeItem) return;
+                    
+                    const toggle = e.target.closest('.tree-toggle');
+                    if (toggle) {
+                        const content = treeItem.nextElementSibling;
+                        if (content && content.classList.contains('tree-content')) {
+                            content.classList.toggle('expanded');
+                            toggle.textContent = content.classList.contains('expanded') ? '-' : '+';
+                        }
+                        e.stopPropagation();
+                    } else {
+                        document.querySelectorAll('.tree-item').forEach(item => {
+                            item.classList.remove('selected');
+                        });
+                        treeItem.classList.add('selected');
+                        currentCategory = treeItem.dataset.id;
+                        currentPage = 1;
+                        loadProducts();
+                    }
+                });
+            } catch (error) {
+                console.error('Ошибка загрузки категорий:', error);
             }
         }
 
         // Отображение товаров
-        function displayProducts(products) {
-            const productsDiv = document.getElementById('products');
+        function renderProducts(products, categoryId = null) {
+            const container = document.querySelector('.products-container');
+            let html = '';
+            
+            if (categoryId) {
+                const path = buildCategoryPath(categoryId);
+                html += `
+                    <div class="breadcrumbs">
+                        ${path.map(name => `<span>${name}</span>`).join('')}
+                    </div>
+                `;
+            }
+            
+            html += '<div class="products-grid">';
             
             if (products.length === 0) {
-                productsDiv.innerHTML = '<div class="no-products">Товары не найдены</div>';
-                return;
+                html += '<div class="loading">Товары не найдены</div>';
+            } else {
+                products.forEach(product => {
+                    const categoryPath = product.category_id ? buildCategoryPath(product.category_id) : [];
+                    html += `
+                        <div class="product-card">
+                            <img class="product-image" 
+                                 src="data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7" 
+                                 data-src="${product.picture}" 
+                                 alt="${product.name}"
+                                 loading="lazy">
+                            ${categoryPath.length > 0 ? `
+                                <div class="product-categories">
+                                    ${categoryPath.join(' → ')}
+                                </div>
+                            ` : ''}
+                            <div class="product-name">${product.name}</div>
+                            <div class="product-price">${product.price} ₽</div>
+                            <div class="product-article">Арт. ${product.article}</div>
+                        </div>
+                    `;
+                });
             }
-
-            const productsHtml = products.map(product => `
-                <div class="product-card">
-                    <img src="${product.picture}" alt="${product.name}" class="product-image" onerror="this.src='https://via.placeholder.com/300x300?text=Нет+фото'">
-                    <div class="product-info">
-                        <h3 class="product-title">${product.name}</h3>
-                        <div class="product-article">Артикул: ${product.article}</div>
-                        <div class="product-price">${product.price} ₽</div>
-                    </div>
-                </div>
-            `).join('');
             
-            productsDiv.innerHTML = productsHtml;
+            html += '</div>';
+            
+            if (currentCategory && products.length > 0) {
+                html += `
+                    <div class="pagination">
+                        <button onclick="changePage(-1)" ${currentPage === 1 ? 'disabled' : ''}>Назад</button>
+                        <span>Страница ${currentPage} из ${totalPages}</span>
+                        <button onclick="changePage(1)" ${currentPage === totalPages ? 'disabled' : ''}>Вперед</button>
+                    </div>
+                `;
+            }
+            
+            container.innerHTML = html;
+            
+            // Инициализация ленивой загрузки изображений
+            const observer = new IntersectionObserver((entries) => {
+                entries.forEach(entry => {
+                    if (entry.isIntersecting) {
+                        const img = entry.target;
+                        img.src = img.dataset.src;
+                        observer.unobserve(img);
+                    }
+                });
+            });
+            
+            document.querySelectorAll('.product-image[data-src]').forEach(img => {
+                observer.observe(img);
+            });
         }
 
-        // Загрузка товаров по категории
-        function loadProducts(categoryId) {
-            const productsDiv = document.getElementById('products');
-            productsDiv.innerHTML = '<div class="loading">Загрузка товаров...</div>';
+        // Загрузка товаров
+        async function loadProducts() {
+            if (!currentCategory || isLoading) return;
+            
+            isLoading = true;
+            const container = document.querySelector('.products-container');
+            container.innerHTML = '<div class="loading">Загрузка товаров...</div>';
+            
+            try {
+                const response = await fetch(`/api/products/${currentCategory}?page=${currentPage}&per_page=30`);
+                const data = await response.json();
+                totalPages = data.total_pages;
+                renderProducts(data.products, currentCategory);
+            } catch (error) {
+                console.error('Ошибка загрузки товаров:', error);
+                container.innerHTML = '<div class="loading">Ошибка загрузки товаров</div>';
+            } finally {
+                isLoading = false;
+            }
+        }
 
-            fetch(`/api/categories/${categoryId}/products`)
-                .then(response => response.json())
-                .then(products => displayProducts(products))
-                .catch(error => {
-                    console.error('Ошибка загрузки товаров:', error);
-                    productsDiv.innerHTML = '<div class="no-products">Ошибка загрузки товаров</div>';
-                });
+        // Изменение страницы
+        function changePage(delta) {
+            const newPage = currentPage + delta;
+            if (newPage >= 1 && newPage <= totalPages) {
+                currentPage = newPage;
+                loadProducts();
+                window.scrollTo(0, 0);
+            }
         }
 
         // Поиск товаров
         let searchTimeout;
-        document.getElementById('searchInput').addEventListener('input', (e) => {
-            const query = e.target.value.trim();
-            const productsDiv = document.getElementById('products');
-
+        const searchInput = document.querySelector('.search-input');
+        const searchResults = document.querySelector('.search-results');
+        
+        searchInput.addEventListener('input', (e) => {
             clearTimeout(searchTimeout);
-
+            const query = e.target.value.trim();
+            
             if (query.length < 2) {
-                productsDiv.innerHTML = '<div class="no-products">Введите минимум 2 символа для поиска</div>';
+                searchResults.style.display = 'none';
+                if (currentCategory) {
+                    loadProducts();
+                } else {
+                    document.querySelector('.products-container').innerHTML = '';
+                }
                 return;
             }
-
-            productsDiv.innerHTML = '<div class="loading">Поиск товаров...</div>';
-
-            searchTimeout = setTimeout(() => {
-                fetch(`/api/products/search?q=${encodeURIComponent(query)}`)
-                    .then(response => response.json())
-                    .then(products => displayProducts(products))
-                    .catch(error => {
-                        console.error('Ошибка поиска:', error);
-                        productsDiv.innerHTML = '<div class="no-products">Ошибка поиска товаров</div>';
-                    });
+            
+            searchTimeout = setTimeout(async () => {
+                try {
+                    const response = await fetch(`/api/search?q=${encodeURIComponent(query)}`);
+                    const products = await response.json();
+                    
+                    if (products.length > 0) {
+                        currentCategory = null;
+                        document.querySelectorAll('.tree-item').forEach(item => {
+                            item.classList.remove('selected');
+                        });
+                        renderProducts(products);
+                    } else {
+                        document.querySelector('.products-container').innerHTML = 
+                            '<div class="loading">По вашему запросу ничего не найдено</div>';
+                    }
+                } catch (error) {
+                    console.error('Ошибка поиска:', error);
+                    document.querySelector('.products-container').innerHTML = 
+                        '<div class="loading">Ошибка поиска</div>';
+                }
             }, 300);
         });
 
         // Инициализация
-        document.addEventListener('DOMContentLoaded', () => {
-            loadStatistics();
-            fetch('/api/categories')
-                .then(response => response.json())
-                .then(categories => buildCategoryTree(categories))
-                .catch(error => {
-                    console.error('Ошибка загрузки категорий:', error);
-                    document.getElementById('categoryTree').innerHTML = 'Ошибка загрузки категорий';
-                });
-        });
+        loadStatistics();
+        buildCategoryTree();
     </script>
 </body>
 </html> 

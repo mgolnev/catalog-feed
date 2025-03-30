@@ -231,41 +231,69 @@ class CatalogDatabase:
             
             return [dict(row) for row in cursor.fetchall()]
 
-    def get_products_by_category(self, category_id: int) -> List[Dict]:
-        """Получение товаров по категории"""
+    def get_products_by_category(self, category_id: int, page: int = 1, per_page: int = 30) -> Dict:
+        """Получение товаров по категории с пагинацией"""
         with sqlite3.connect(self.db_path) as conn:
             conn.row_factory = sqlite3.Row
             cursor = conn.cursor()
             
-            # Получаем все товары из категории и её подкатегорий
+            # Создаем временную таблицу для хранения всех ID подкатегорий
             cursor.execute("""
                 WITH RECURSIVE subcategories AS (
-                    -- Базовый случай: начальная категория
-                    SELECT id, parent_id
-                    FROM categories
-                    WHERE id = ?
-                    
+                    SELECT id FROM categories WHERE id = ?
                     UNION ALL
-                    
-                    -- Рекурсивная часть: все подкатегории
-                    SELECT c.id, c.parent_id
-                    FROM categories c
-                    JOIN subcategories s ON c.parent_id = s.id
+                    SELECT c.id FROM categories c
+                    JOIN subcategories sc ON c.parent_id = sc.id
                 )
-                SELECT DISTINCT
+                SELECT COUNT(DISTINCT p.id) as total_count
+                FROM products p
+                JOIN product_categories pc ON p.id = pc.product_id
+                WHERE pc.category_id IN subcategories
+            """, (category_id,))
+            
+            total_count = cursor.fetchone()['total_count']
+            total_pages = (total_count + per_page - 1) // per_page
+            
+            # Получаем товары для текущей страницы
+            cursor.execute("""
+                WITH RECURSIVE subcategories AS (
+                    SELECT id FROM categories WHERE id = ?
+                    UNION ALL
+                    SELECT c.id FROM categories c
+                    JOIN subcategories sc ON c.parent_id = sc.id
+                )
+                SELECT DISTINCT 
                     p.id,
                     p.article,
                     p.name,
                     p.price,
                     p.url,
-                    (SELECT image_url FROM product_images pi WHERE pi.product_id = p.id LIMIT 1) as picture
+                    pc.category_id,
+                    (SELECT image_url FROM product_images WHERE product_id = p.id LIMIT 1) as picture
                 FROM products p
                 JOIN product_categories pc ON p.id = pc.product_id
-                JOIN subcategories s ON pc.category_id = s.id
-                ORDER BY p.name
-            """, (category_id,))
+                WHERE pc.category_id IN subcategories
+                ORDER BY p.id
+                LIMIT ? OFFSET ?
+            """, (category_id, per_page, (page - 1) * per_page))
             
-            return [dict(row) for row in cursor.fetchall()]
+            products = [{
+                'id': row['id'],
+                'article': row['article'],
+                'name': row['name'],
+                'price': row['price'],
+                'url': row['url'],
+                'picture': row['picture'],
+                'category_id': row['category_id']
+            } for row in cursor.fetchall()]
+            
+            return {
+                'products': products,
+                'total_pages': total_pages,
+                'current_page': page,
+                'per_page': per_page,
+                'total_count': total_count
+            }
     
     def normalize_text(self, text: str) -> str:
         """Нормализация текста для поиска"""
@@ -277,26 +305,32 @@ class CatalogDatabase:
             conn.row_factory = sqlite3.Row
             cursor = conn.cursor()
             
-            # Нормализуем запрос
-            normalized_query = self.normalize_text(query)
-            
-            # Ищем товары
             cursor.execute("""
-                SELECT 
+                SELECT DISTINCT
                     p.id,
                     p.article,
                     p.name,
                     p.price,
                     p.url,
-                    (SELECT image_url FROM product_images pi WHERE pi.product_id = p.id LIMIT 1) as picture
+                    pc.category_id,
+                    (SELECT image_url FROM product_images WHERE product_id = p.id LIMIT 1) as picture
                 FROM products p
-                JOIN products_fts fts ON p.id = fts.rowid
+                JOIN products_fts f ON p.id = f.rowid
+                LEFT JOIN product_categories pc ON p.id = pc.product_id
                 WHERE products_fts MATCH ?
                 ORDER BY rank
-                LIMIT 100
-            """, (normalized_query,))
+                LIMIT 50
+            """, (query,))
             
-            return [dict(row) for row in cursor.fetchall()]
+            return [{
+                'id': row['id'],
+                'article': row['article'],
+                'name': row['name'],
+                'price': row['price'],
+                'url': row['url'],
+                'picture': row['picture'],
+                'category_id': row['category_id']
+            } for row in cursor.fetchall()]
     
     def get_statistics(self) -> Dict:
         """Получение статистики каталога"""
