@@ -366,50 +366,6 @@ class CatalogDatabase:
             
             stats = cur.fetchone()
             
-            # Добавляем статистику по категориям верхнего уровня
-            cur.execute('''
-                WITH RECURSIVE subcategories AS (
-                    SELECT c.id, c.name, c.parent_id, 1 as level, ARRAY[c.id] as path
-                    FROM categories c
-                    WHERE c.parent_id IS NULL
-                    
-                    UNION ALL
-                    
-                    SELECT c.id, c.name, c.parent_id, s.level + 1, s.path || c.id
-                    FROM categories c
-                    JOIN subcategories s ON c.parent_id = s.id
-                    WHERE NOT c.id = ANY(s.path)
-                ),
-                category_products AS (
-                    SELECT 
-                        c.id,
-                        COUNT(DISTINCT pc.product_id) as direct_count,
-                        (
-                            WITH RECURSIVE child_categories AS (
-                                SELECT id FROM categories WHERE id = c.id
-                                UNION ALL
-                                SELECT ch.id 
-                                FROM categories ch
-                                JOIN child_categories cc ON ch.parent_id = cc.id
-                            )
-                            SELECT COUNT(DISTINCT pc2.product_id)
-                            FROM product_categories pc2
-                            WHERE pc2.category_id IN (SELECT id FROM child_categories)
-                        ) as product_count
-                    FROM categories c
-                    LEFT JOIN product_categories pc ON c.id = pc.category_id
-                    GROUP BY c.id
-                )
-                SELECT s.id, s.name, s.parent_id, s.level, s.path,
-                       COALESCE(cp.direct_count, 0) as direct_product_count,
-                       COALESCE(cp.product_count, 0) as product_count
-                FROM subcategories s
-                LEFT JOIN category_products cp ON s.id = cp.id
-                ORDER BY s.path;
-            ''')
-            
-            top_categories = cur.fetchall()
-            
             return {
                 'total_categories': stats['total_categories'],
                 'total_products': stats['total_products'],
@@ -417,12 +373,7 @@ class CatalogDatabase:
                 'categories_with_products': stats['categories_with_products'],
                 'average_price': round(float(stats['average_price']), 2) if stats['average_price'] else 0,
                 'min_price': round(float(stats['min_price']), 2) if stats['min_price'] else 0,
-                'max_price': round(float(stats['max_price']), 2) if stats['max_price'] else 0,
-                'top_categories': [{
-                    'id': cat['id'],
-                    'name': cat['name'],
-                    'product_count': cat['product_count']
-                } for cat in top_categories]
+                'max_price': round(float(stats['max_price']), 2) if stats['max_price'] else 0
             }
             
         finally:
