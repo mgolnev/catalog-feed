@@ -26,6 +26,35 @@
             border-bottom: 1px solid #ddd;
         }
 
+        .header-content {
+            max-width: 800px;
+            margin: 0 auto;
+            display: flex;
+            flex-direction: column;
+            gap: 15px;
+        }
+
+        .update-button {
+            align-self: flex-end;
+            padding: 8px 16px;
+            background-color: #0066cc;
+            color: white;
+            border: none;
+            border-radius: 4px;
+            cursor: pointer;
+            font-size: 14px;
+            transition: background-color 0.2s;
+        }
+
+        .update-button:hover {
+            background-color: #0052a3;
+        }
+
+        .update-button:disabled {
+            background-color: #ccc;
+            cursor: not-allowed;
+        }
+
         .search-container {
             max-width: 800px;
             margin: 0 auto;
@@ -278,13 +307,26 @@
             color: #666;
             margin-bottom: 8px;
         }
+
+        .category-path {
+            display: block;
+            margin-bottom: 4px;
+        }
+
+        .category-path:not(:last-child) {
+            border-bottom: 1px solid #eee;
+            padding-bottom: 4px;
+        }
     </style>
 </head>
 <body>
     <div class="header">
-        <div class="search-container">
-            <input type="text" class="search-input" placeholder="Поиск товаров...">
-            <div class="search-results"></div>
+        <div class="header-content">
+            <button class="update-button" onclick="updateCatalog()">Обновить каталог</button>
+            <div class="search-container">
+                <input type="text" class="search-input" placeholder="Поиск товаров...">
+                <div class="search-results"></div>
+            </div>
             <div class="stats"></div>
         </div>
     </div>
@@ -301,6 +343,7 @@
         let isLoading = false;
         let categoriesCache = {};
         let categoryPaths = {};
+        let isUpdating = false;
 
         // Функция для построения пути категории
         function buildCategoryPath(categoryId) {
@@ -420,7 +463,6 @@
                 html += '<div class="loading">Товары не найдены</div>';
             } else {
                 products.forEach(product => {
-                    const categoryPath = product.category_id ? buildCategoryPath(product.category_id) : [];
                     html += `
                         <div class="product-card">
                             <img class="product-image" 
@@ -428,11 +470,11 @@
                                  data-src="${product.picture}" 
                                  alt="${product.name}"
                                  loading="lazy">
-                            ${categoryPath.length > 0 ? `
-                                <div class="product-categories">
-                                    ${categoryPath.join(' → ')}
-                                </div>
-                            ` : ''}
+                            <div class="product-categories">
+                                ${product.category_paths.map(path => 
+                                    `<span class="category-path">${path}</span>`
+                                ).join('')}
+                            </div>
                             <div class="product-name">${product.name}</div>
                             <div class="product-price">${product.price} ₽</div>
                             <div class="product-article">Арт. ${product.article}</div>
@@ -543,6 +585,35 @@
                 }
             }, 300);
         });
+
+        // Функция обновления каталога
+        async function updateCatalog() {
+            if (isUpdating) return;
+            
+            const button = document.querySelector('.update-button');
+            button.disabled = true;
+            isUpdating = true;
+            
+            try {
+                const response = await fetch('/update');
+                const result = await response.json();
+                
+                if (result.success) {
+                    // Перезагружаем страницу через 2 секунды после успешного обновления
+                    setTimeout(() => {
+                        window.location.reload();
+                    }, 2000);
+                } else {
+                    alert('Ошибка обновления каталога: ' + result.error);
+                }
+            } catch (error) {
+                console.error('Ошибка обновления каталога:', error);
+                alert('Ошибка обновления каталога');
+            } finally {
+                button.disabled = false;
+                isUpdating = false;
+            }
+        }
 
         // Инициализация
         loadStatistics();

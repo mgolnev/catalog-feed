@@ -254,13 +254,33 @@ class CatalogDatabase:
             total_count = cursor.fetchone()['total_count']
             total_pages = (total_count + per_page - 1) // per_page
             
-            # Получаем товары для текущей страницы
+            # Получаем товары для текущей страницы с путями категорий
             cursor.execute("""
-                WITH RECURSIVE subcategories AS (
+                WITH RECURSIVE 
+                subcategories AS (
                     SELECT id FROM categories WHERE id = ?
                     UNION ALL
                     SELECT c.id FROM categories c
                     JOIN subcategories sc ON c.parent_id = sc.id
+                ),
+                category_paths AS (
+                    SELECT 
+                        c.id as category_id,
+                        c.name as category_name,
+                        c.parent_id,
+                        c.name as path
+                    FROM categories c
+                    WHERE c.parent_id IS NULL
+                    
+                    UNION ALL
+                    
+                    SELECT 
+                        c.id,
+                        c.name,
+                        c.parent_id,
+                        cp.path || ' → ' || c.name
+                    FROM categories c
+                    JOIN category_paths cp ON c.parent_id = cp.category_id
                 )
                 SELECT DISTINCT 
                     p.id,
@@ -268,11 +288,13 @@ class CatalogDatabase:
                     p.name,
                     p.price,
                     p.url,
-                    pc.category_id,
+                    GROUP_CONCAT(DISTINCT cp.path) as category_paths,
                     (SELECT image_url FROM product_images WHERE product_id = p.id LIMIT 1) as picture
                 FROM products p
                 JOIN product_categories pc ON p.id = pc.product_id
+                JOIN category_paths cp ON pc.category_id = cp.category_id
                 WHERE pc.category_id IN subcategories
+                GROUP BY p.id
                 ORDER BY p.id
                 LIMIT ? OFFSET ?
             """, (category_id, per_page, (page - 1) * per_page))
@@ -284,7 +306,7 @@ class CatalogDatabase:
                 'price': row['price'],
                 'url': row['url'],
                 'picture': row['picture'],
-                'category_id': row['category_id']
+                'category_paths': row['category_paths'].split(',') if row['category_paths'] else []
             } for row in cursor.fetchall()]
             
             return {
@@ -306,18 +328,39 @@ class CatalogDatabase:
             cursor = conn.cursor()
             
             cursor.execute("""
+                WITH RECURSIVE category_paths AS (
+                    SELECT 
+                        c.id as category_id,
+                        c.name as category_name,
+                        c.parent_id,
+                        c.name as path
+                    FROM categories c
+                    WHERE c.parent_id IS NULL
+                    
+                    UNION ALL
+                    
+                    SELECT 
+                        c.id,
+                        c.name,
+                        c.parent_id,
+                        cp.path || ' → ' || c.name
+                    FROM categories c
+                    JOIN category_paths cp ON c.parent_id = cp.category_id
+                )
                 SELECT DISTINCT
                     p.id,
                     p.article,
                     p.name,
                     p.price,
                     p.url,
-                    pc.category_id,
+                    GROUP_CONCAT(DISTINCT cp.path) as category_paths,
                     (SELECT image_url FROM product_images WHERE product_id = p.id LIMIT 1) as picture
                 FROM products p
                 JOIN products_fts f ON p.id = f.rowid
-                LEFT JOIN product_categories pc ON p.id = pc.product_id
+                JOIN product_categories pc ON p.id = pc.product_id
+                JOIN category_paths cp ON pc.category_id = cp.category_id
                 WHERE products_fts MATCH ?
+                GROUP BY p.id
                 ORDER BY rank
                 LIMIT 50
             """, (query,))
@@ -329,7 +372,7 @@ class CatalogDatabase:
                 'price': row['price'],
                 'url': row['url'],
                 'picture': row['picture'],
-                'category_id': row['category_id']
+                'category_paths': row['category_paths'].split(',') if row['category_paths'] else []
             } for row in cursor.fetchall()]
     
     def get_statistics(self) -> Dict:
