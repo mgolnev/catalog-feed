@@ -1,0 +1,335 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Каталог Gloria Jeans</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: Arial, sans-serif;
+            display: flex;
+            flex-direction: column;
+            height: 100vh;
+            background-color: #f5f5f5;
+        }
+
+        .header {
+            padding: 20px;
+            background-color: white;
+            border-bottom: 1px solid #ddd;
+        }
+
+        .search-container {
+            max-width: 800px;
+            margin: 0 auto;
+        }
+
+        .search-input {
+            width: 100%;
+            padding: 12px;
+            border: 1px solid #ddd;
+            border-radius: 4px;
+            font-size: 16px;
+            margin-bottom: 15px;
+        }
+
+        .stats {
+            background-color: #e8f4ff;
+            padding: 15px;
+            border-radius: 4px;
+            margin-bottom: 20px;
+            font-size: 14px;
+        }
+
+        .stats-item {
+            margin-bottom: 5px;
+            color: #333;
+        }
+
+        .stats-number {
+            font-weight: bold;
+            color: #0066cc;
+        }
+
+        .main-content {
+            display: flex;
+            flex: 1;
+            overflow: hidden;
+        }
+
+        .categories-tree {
+            width: 300px;
+            padding: 20px;
+            background-color: white;
+            border-right: 1px solid #ddd;
+            overflow-y: auto;
+        }
+
+        .products-view {
+            flex: 1;
+            padding: 20px;
+            background-color: white;
+            overflow-y: auto;
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(250px, 1fr));
+            gap: 20px;
+            align-items: start;
+        }
+
+        .category-item {
+            margin: 5px 0;
+            cursor: pointer;
+            padding: 5px;
+            border-radius: 4px;
+            transition: background-color 0.2s;
+        }
+
+        .category-item:hover {
+            background-color: #f0f0f0;
+        }
+
+        .category-content {
+            margin-left: 20px;
+            display: none;
+        }
+
+        .category-content.expanded {
+            display: block;
+        }
+
+        .toggle-icon {
+            display: inline-block;
+            width: 20px;
+            text-align: center;
+            cursor: pointer;
+        }
+
+        .category-name {
+            display: inline-block;
+            margin-left: 5px;
+        }
+
+        .product-count {
+            color: #666;
+            font-size: 0.9em;
+            margin-left: 5px;
+        }
+
+        .product-card {
+            border: 1px solid #ddd;
+            padding: 12px;
+            border-radius: 8px;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+            background: white;
+            display: flex;
+            flex-direction: column;
+            height: 100%;
+            transition: transform 0.2s, box-shadow 0.2s;
+        }
+
+        .product-card:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 4px 8px rgba(0,0,0,0.15);
+        }
+
+        .product-image {
+            width: 100%;
+            height: 300px;
+            object-fit: contain;
+            margin-bottom: 12px;
+            background-color: #f8f9fa;
+            border-radius: 4px;
+        }
+
+        .product-info {
+            display: flex;
+            flex-direction: column;
+            gap: 8px;
+            flex-grow: 1;
+        }
+
+        .product-title {
+            font-size: 14px;
+            line-height: 1.4;
+            margin: 0;
+            flex-grow: 1;
+        }
+
+        .product-article {
+            font-size: 12px;
+            color: #666;
+        }
+
+        .product-price {
+            font-size: 18px;
+            font-weight: bold;
+            color: #e44d26;
+            margin: 8px 0;
+        }
+
+        .no-products {
+            color: #666;
+            font-style: italic;
+            padding: 20px;
+            text-align: center;
+            grid-column: 1 / -1;
+        }
+
+        .loading {
+            text-align: center;
+            padding: 20px;
+            color: #666;
+            grid-column: 1 / -1;
+        }
+    </style>
+</head>
+<body>
+    <div class="header">
+        <div class="search-container">
+            <input type="text" id="searchInput" class="search-input" placeholder="Поиск товаров...">
+            <div class="stats" id="statistics"></div>
+        </div>
+    </div>
+
+    <div class="main-content">
+        <div class="categories-tree" id="categoryTree"></div>
+        <div class="products-view" id="products"></div>
+    </div>
+
+    <script>
+        // Загрузка статистики
+        function loadStatistics() {
+            fetch('/api/statistics')
+                .then(response => response.json())
+                .then(data => {
+                    const statsHtml = `
+                        <div class="stats-item">Всего категорий: <span class="stats-number">${data.categories_count}</span></div>
+                        <div class="stats-item">Всего товаров: <span class="stats-number">${data.products_count}</span></div>
+                        <div class="stats-item">Средняя цена: <span class="stats-number">${data.average_price.toFixed(2)} ₽</span></div>
+                    `;
+                    document.getElementById('statistics').innerHTML = statsHtml;
+                })
+                .catch(error => {
+                    console.error('Ошибка загрузки статистики:', error);
+                    document.getElementById('statistics').innerHTML = '<div class="stats-item">Ошибка загрузки статистики</div>';
+                });
+        }
+
+        // Построение дерева категорий
+        function buildCategoryTree(categories, parentElement = document.getElementById('categoryTree')) {
+            for (const [id, category] of Object.entries(categories)) {
+                const div = document.createElement('div');
+                div.className = 'category-item';
+                
+                const hasChildren = category.children && Object.keys(category.children).length > 0;
+                const toggleIcon = hasChildren ? '▶' : '•';
+                
+                div.innerHTML = `
+                    <span class="toggle-icon">${toggleIcon}</span>
+                    <span class="category-name">${category.name}</span>
+                    <span class="product-count">(${category.product_count})</span>
+                `;
+
+                if (hasChildren) {
+                    const childrenDiv = document.createElement('div');
+                    childrenDiv.className = 'category-content';
+                    buildCategoryTree(category.children, childrenDiv);
+                    div.appendChild(childrenDiv);
+
+                    div.querySelector('.toggle-icon').addEventListener('click', (e) => {
+                        e.stopPropagation();
+                        const content = div.querySelector('.category-content');
+                        content.classList.toggle('expanded');
+                        div.querySelector('.toggle-icon').textContent = 
+                            content.classList.contains('expanded') ? '▼' : '▶';
+                    });
+                }
+
+                div.addEventListener('click', () => loadProducts(id));
+                parentElement.appendChild(div);
+            }
+        }
+
+        // Отображение товаров
+        function displayProducts(products) {
+            const productsDiv = document.getElementById('products');
+            
+            if (products.length === 0) {
+                productsDiv.innerHTML = '<div class="no-products">Товары не найдены</div>';
+                return;
+            }
+
+            const productsHtml = products.map(product => `
+                <div class="product-card">
+                    <img src="${product.picture}" alt="${product.name}" class="product-image" onerror="this.src='https://via.placeholder.com/300x300?text=Нет+фото'">
+                    <div class="product-info">
+                        <h3 class="product-title">${product.name}</h3>
+                        <div class="product-article">Артикул: ${product.article}</div>
+                        <div class="product-price">${product.price} ₽</div>
+                    </div>
+                </div>
+            `).join('');
+            
+            productsDiv.innerHTML = productsHtml;
+        }
+
+        // Загрузка товаров по категории
+        function loadProducts(categoryId) {
+            const productsDiv = document.getElementById('products');
+            productsDiv.innerHTML = '<div class="loading">Загрузка товаров...</div>';
+
+            fetch(`/api/categories/${categoryId}/products`)
+                .then(response => response.json())
+                .then(products => displayProducts(products))
+                .catch(error => {
+                    console.error('Ошибка загрузки товаров:', error);
+                    productsDiv.innerHTML = '<div class="no-products">Ошибка загрузки товаров</div>';
+                });
+        }
+
+        // Поиск товаров
+        let searchTimeout;
+        document.getElementById('searchInput').addEventListener('input', (e) => {
+            const query = e.target.value.trim();
+            const productsDiv = document.getElementById('products');
+
+            clearTimeout(searchTimeout);
+
+            if (query.length < 2) {
+                productsDiv.innerHTML = '<div class="no-products">Введите минимум 2 символа для поиска</div>';
+                return;
+            }
+
+            productsDiv.innerHTML = '<div class="loading">Поиск товаров...</div>';
+
+            searchTimeout = setTimeout(() => {
+                fetch(`/api/products/search?q=${encodeURIComponent(query)}`)
+                    .then(response => response.json())
+                    .then(products => displayProducts(products))
+                    .catch(error => {
+                        console.error('Ошибка поиска:', error);
+                        productsDiv.innerHTML = '<div class="no-products">Ошибка поиска товаров</div>';
+                    });
+            }, 300);
+        });
+
+        // Инициализация
+        document.addEventListener('DOMContentLoaded', () => {
+            loadStatistics();
+            fetch('/api/categories')
+                .then(response => response.json())
+                .then(categories => buildCategoryTree(categories))
+                .catch(error => {
+                    console.error('Ошибка загрузки категорий:', error);
+                    document.getElementById('categoryTree').innerHTML = 'Ошибка загрузки категорий';
+                });
+        });
+    </script>
+</body>
+</html> 

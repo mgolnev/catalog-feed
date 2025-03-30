@@ -1,0 +1,618 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Каталог Gloria Jeans</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: Arial, sans-serif;
+            display: flex;
+            flex-direction: column;
+            height: 100vh;
+            background-color: #f5f5f5;
+        }
+
+        .header {
+            padding: 20px;
+            background-color: white;
+            border-bottom: 1px solid #ddd;
+        }
+
+        .search-container {
+            max-width: 800px;
+            margin: 0 auto;
+        }
+
+        .search-input {
+            width: 100%;
+            padding: 12px;
+            border: 1px solid #ddd;
+            border-radius: 4px;
+            font-size: 16px;
+            margin-bottom: 15px;
+        }
+
+        .stats {
+            background-color: #e8f4ff;
+            padding: 15px;
+            border-radius: 4px;
+            margin-bottom: 20px;
+            font-size: 14px;
+        }
+
+        .stats-item {
+            margin-bottom: 5px;
+            color: #333;
+        }
+
+        .stats-number {
+            font-weight: bold;
+            color: #0066cc;
+        }
+
+        .main-content {
+            display: flex;
+            flex: 1;
+            overflow: hidden;
+        }
+
+        .categories-tree {
+            width: 40%;
+            padding: 20px;
+            background-color: white;
+            border-right: 1px solid #ddd;
+            overflow-y: auto;
+        }
+
+        .products-view {
+            width: 60%;
+            padding: 20px;
+            background-color: white;
+            overflow-y: auto;
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+            gap: 16px;
+            align-items: start;
+        }
+
+        .category-item {
+            margin: 5px 0;
+            cursor: pointer;
+            padding: 5px;
+            border-radius: 4px;
+            transition: background-color 0.2s;
+        }
+
+        .category-item:hover {
+            background-color: #f0f0f0;
+        }
+
+        .category-content {
+            margin-left: 20px;
+            display: none;
+        }
+
+        .category-content.expanded {
+            display: block;
+        }
+
+        .toggle-icon {
+            display: inline-block;
+            width: 20px;
+            text-align: center;
+            cursor: pointer;
+        }
+
+        .category-name {
+            display: inline-block;
+            margin-left: 5px;
+        }
+
+        .product-count {
+            color: #666;
+            font-size: 0.9em;
+            margin-left: 5px;
+        }
+
+        .product-category-path {
+            font-size: 12px;
+            color: #666;
+            margin-bottom: 8px;
+            line-height: 1.4;
+        }
+
+        .product-category-path span:not(:last-child)::after {
+            content: " → ";
+            color: #999;
+        }
+
+        .product-card {
+            border: 1px solid #ddd;
+            padding: 12px;
+            border-radius: 8px;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+            background: white;
+            display: flex;
+            flex-direction: column;
+            height: 100%;
+            transition: transform 0.2s, box-shadow 0.2s;
+        }
+
+        .product-card:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 4px 8px rgba(0,0,0,0.15);
+        }
+
+        .product-card img {
+            width: 100%;
+            height: 260px;
+            object-fit: contain;
+            background-color: #f8f9fa;
+            border-radius: 4px;
+            margin-bottom: 12px;
+        }
+
+        .product-info {
+            display: flex;
+            flex-direction: column;
+            gap: 8px;
+            flex-grow: 1;
+        }
+
+        .product-title {
+            font-size: 14px;
+            line-height: 1.4;
+            margin: 0;
+            flex-grow: 1;
+        }
+
+        .product-article {
+            font-size: 12px;
+            color: #666;
+        }
+
+        .product-price {
+            font-size: 18px;
+            font-weight: bold;
+            color: #e44d26;
+            margin: 8px 0;
+        }
+
+        .product-url {
+            display: inline-block;
+            padding: 8px 12px;
+            background-color: #0066cc;
+            color: white;
+            text-decoration: none;
+            border-radius: 4px;
+            text-align: center;
+            transition: background-color 0.2s;
+            margin-top: auto;
+        }
+
+        .product-url:hover {
+            background-color: #0056b3;
+        }
+
+        .no-products {
+            color: #666;
+            font-style: italic;
+            padding: 20px;
+            text-align: center;
+        }
+
+        .loading {
+            text-align: center;
+            padding: 20px;
+            color: #666;
+        }
+
+        .special-collections {
+            margin-top: 20px;
+            padding-top: 20px;
+            border-top: 1px solid #ddd;
+        }
+
+        .special-collections-title {
+            font-weight: bold;
+            margin-bottom: 10px;
+            color: #333;
+        }
+
+        .controls {
+            display: flex;
+            gap: 10px;
+            align-items: center;
+            margin-bottom: 15px;
+        }
+        
+        .checkbox-container {
+            display: flex;
+            align-items: center;
+            gap: 5px;
+        }
+        
+        .update-button {
+            padding: 12px 20px;
+            border: none;
+            border-radius: 4px;
+            font-size: 14px;
+            cursor: pointer;
+            transition: background-color 0.2s;
+            background-color: #0066cc;
+            color: white;
+        }
+        
+        .update-button:hover {
+            background-color: #0056b3;
+        }
+        
+        .update-button:disabled {
+            background-color: #ccc;
+            cursor: not-allowed;
+        }
+        
+        .status-message {
+            margin-top: 10px;
+            padding: 10px;
+            border-radius: 4px;
+            display: none;
+        }
+        
+        .status-message.success {
+            background-color: #d4edda;
+            color: #155724;
+            border: 1px solid #c3e6cb;
+        }
+        
+        .status-message.error {
+            background-color: #f8d7da;
+            color: #721c24;
+            border: 1px solid #f5c6cb;
+        }
+
+        .product-title mark {
+            background-color: #fff3cd;
+            padding: 0 2px;
+            border-radius: 2px;
+            color: #856404;
+        }
+
+        .product-article mark {
+            background-color: #d4edda;
+            padding: 0 2px;
+            border-radius: 2px;
+            color: #155724;
+        }
+
+        @media (max-width: 1400px) {
+            .products-view {
+                grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+            }
+        }
+
+        @media (max-width: 1200px) {
+            .products-view {
+                grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+            }
+        }
+
+        @media (max-width: 768px) {
+            .main-content {
+                flex-direction: column;
+            }
+            
+            .categories-tree,
+            .products-view {
+                width: 100%;
+            }
+            
+            .products-view {
+                grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="header">
+        <div class="search-container">
+            <div class="controls">
+                <input type="text" class="search-input" placeholder="Поиск по артикулу или названию...">
+                <div class="checkbox-container">
+                    <input type="checkbox" id="available-only" checked>
+                    <label for="available-only">Только доступные товары</label>
+                </div>
+                <button class="update-button" onclick="updateCatalog()">Обновить каталог</button>
+            </div>
+            <div class="stats">
+                <div class="stats-item">Загрузка статистики...</div>
+            </div>
+        </div>
+    </div>
+    <div class="main-content">
+        <div class="categories-tree">
+            <div class="loading">Загрузка категорий...</div>
+        </div>
+        <div class="products-view">
+            <div class="no-products">Выберите категорию для просмотра товаров</div>
+        </div>
+    </div>
+
+    <script>
+        document.addEventListener('DOMContentLoaded', function() {
+            const searchInput = document.querySelector('.search-input');
+            const productsView = document.querySelector('.products-view');
+            const categoriesTree = document.querySelector('.categories-tree');
+            let searchTimeout;
+
+            // Загрузка дерева категорий
+            async function loadCategories() {
+                try {
+                    const response = await fetch('/api/categories');
+                    const categories = await response.json();
+                    categoriesTree.innerHTML = renderCategoryTree(categories);
+                    
+                    // Добавляем обработчики событий после рендеринга
+                    addCategoryEventListeners();
+                } catch (error) {
+                    categoriesTree.innerHTML = '<div class="error">Ошибка загрузки категорий</div>';
+                }
+            }
+
+            // Рендеринг дерева категорий
+            function renderCategoryTree(categories) {
+                let html = '';
+                
+                // Основной каталог
+                html += '<div class="category-item" data-category-id="root">';
+                html += '<span class="toggle-icon">▼</span>';
+                html += '<span class="category-name">Каталог</span>';
+                html += '</div>';
+                html += '<div class="category-content expanded">';
+                
+                // Рендерим категории
+                for (const categoryId in categories) {
+                    html += renderCategory(categories[categoryId]);
+                }
+                
+                html += '</div>';
+                
+                return html;
+            }
+
+            // Рендеринг отдельной категории
+            function renderCategory(category) {
+                let html = '';
+                
+                html += `<div class="category-item" data-category-id="${category.id}">`;
+                if (category.children && category.children.length > 0) {
+                    html += '<span class="toggle-icon">▶</span>';
+                }
+                html += `<span class="category-name">${category.name}</span>`;
+                if (category.product_count > 0) {
+                    html += `<span class="product-count">(${category.product_count} ${pluralize(category.product_count, 'товар', 'товара', 'товаров')})</span>`;
+                }
+                html += '</div>';
+                
+                if (category.children && category.children.length > 0) {
+                    html += '<div class="category-content">';
+                    for (const child of category.children) {
+                        html += renderCategory(child);
+                    }
+                    html += '</div>';
+                }
+                
+                return html;
+            }
+
+            // Функция для правильного склонения слова "товар"
+            function pluralize(count, one, two, five) {
+                if (count % 10 === 1 && count % 100 !== 11) {
+                    return one;
+                }
+                if ([2, 3, 4].includes(count % 10) && ![12, 13, 14].includes(count % 100)) {
+                    return two;
+                }
+                return five;
+            }
+
+            // Добавление обработчиков событий для категорий
+            function addCategoryEventListeners() {
+                document.querySelectorAll('.toggle-icon').forEach(icon => {
+                    icon.addEventListener('click', function(e) {
+                        e.stopPropagation();
+                        const content = this.parentElement.nextElementSibling;
+                        if (content && content.classList.contains('category-content')) {
+                            content.classList.toggle('expanded');
+                            this.textContent = content.classList.contains('expanded') ? '▼' : '▶';
+                        }
+                    });
+                });
+
+                document.querySelectorAll('.category-item').forEach(item => {
+                    item.addEventListener('click', function(e) {
+                        if (!e.target.classList.contains('toggle-icon')) {
+                            const categoryId = this.dataset.categoryId;
+                            if (categoryId && categoryId !== 'root') {
+                                loadProducts(categoryId);
+                            }
+                        }
+                    });
+                });
+            }
+
+            // Загрузка товаров категории
+            async function loadProducts(categoryId) {
+                productsView.innerHTML = '<div class="loading">Загрузка товаров...</div>';
+                
+                try {
+                    const response = await fetch(`/api/products/${categoryId}`);
+                    const products = await response.json();
+                    
+                    if (products.length === 0) {
+                        productsView.innerHTML = '<div class="no-products">В данной категории товаров не найдено</div>';
+                        return;
+                    }
+                    
+                    productsView.innerHTML = products.map(product => `
+                        <div class="product-card">
+                            <div class="product-category-path">
+                                ${product.category.path.map(category => `<span>${category.name}</span>`).join(' → ')}
+                            </div>
+                            <img src="${product.images[0]}" alt="${product.name}">
+                            <div class="product-info">
+                                <div class="product-title">${product.name}</div>
+                                <div class="product-article">Артикул: ${product.article || 'Не указан'}</div>
+                                <div class="product-price">${product.price} ₽</div>
+                                <a href="${product.url}" class="product-url" target="_blank">Перейти к товару</a>
+                            </div>
+                        </div>
+                    `).join('');
+                    
+                } catch (error) {
+                    productsView.innerHTML = '<div class="no-products">Ошибка загрузки товаров</div>';
+                }
+            }
+
+            // Обработчик поиска
+            searchInput.addEventListener('input', function(e) {
+                clearTimeout(searchTimeout);
+                const query = e.target.value.trim();
+                
+                if (query.length < 2) {  // Уменьшаем минимальную длину запроса до 2 символов
+                    productsView.innerHTML = '<div class="no-products">Введите минимум 2 символа для поиска</div>';
+                    return;
+                }
+
+                searchTimeout = setTimeout(async () => {
+                    productsView.innerHTML = '<div class="loading">Поиск товаров...</div>';
+                    
+                    try {
+                        const response = await fetch(`/api/search?q=${encodeURIComponent(query)}`);
+                        if (!response.ok) {
+                            throw new Error('Ошибка при поиске');
+                        }
+                        
+                        const products = await response.json();
+                        
+                        if (products.length === 0) {
+                            productsView.innerHTML = '<div class="no-products">Товары не найдены</div>';
+                            return;
+                        }
+                        
+                        productsView.innerHTML = products.map(product => `
+                            <div class="product-card">
+                                <div class="product-category-path">
+                                    ${product.category.path.map(category => `<span>${category.name}</span>`).join(' → ')}
+                                </div>
+                                <img src="${product.images[0] || 'path/to/placeholder.jpg'}" alt="${product.name}">
+                                <div class="product-info">
+                                    <div class="product-title">${product.name}</div>
+                                    <div class="product-article">Артикул: ${product.article || 'Не указан'}</div>
+                                    <div class="product-price">${product.price} ₽</div>
+                                    <a href="${product.url}" class="product-url" target="_blank">Перейти к товару</a>
+                                </div>
+                            </div>
+                        `).join('');
+                        
+                        // Подсвечиваем найденные слова
+                        const searchTerms = query.toLowerCase().split(/\s+/);
+                        document.querySelectorAll('.product-title').forEach(title => {
+                            let text = title.textContent;
+                            searchTerms.forEach(term => {
+                                if (term.length >= 2) {
+                                    const regex = new RegExp(`(${term})`, 'gi');
+                                    text = text.replace(regex, '<mark>$1</mark>');
+                                }
+                            });
+                            title.innerHTML = text;
+                        });
+                    } catch (error) {
+                        productsView.innerHTML = '<div class="no-products">Ошибка при поиске товаров</div>';
+                        console.error('Ошибка поиска:', error);
+                    }
+                }, 300);
+            });
+
+            // Загрузка статистики
+            async function loadStatistics() {
+                try {
+                    const response = await fetch('/api/statistics');
+                    const stats = await response.json();
+                    
+                    document.querySelector('.stats').innerHTML = `
+                        <div class="stats-item">Всего уникальных товаров: <span class="stats-number">${stats.total_products.toLocaleString()}</span></div>
+                        <div class="stats-item">Всего категорий: <span class="stats-number">${stats.total_categories.toLocaleString()}</span></div>
+                        <div class="stats-item">Категорий с товарами: <span class="stats-number">${stats.categories_with_products.toLocaleString()}</span></div>
+                    `;
+                } catch (error) {
+                    document.querySelector('.stats').innerHTML = '<div class="stats-item">Ошибка загрузки статистики</div>';
+                }
+            }
+
+            // Инициализация
+            loadCategories();
+            loadStatistics();
+        });
+
+        async function updateCatalog() {
+            const updateButton = document.querySelector('.update-button');
+            updateButton.disabled = true;
+            
+            try {
+                const response = await fetch('/update');
+                if (!response.ok) {
+                    throw new Error(`HTTP error! status: ${response.status}`);
+                }
+                const data = await response.json();
+                
+                if (data.success) {
+                    showStatusMessage('Каталог обновляется, сервер перезапускается...', 'success');
+                    // Ждем 3 секунды и обновляем страницу
+                    setTimeout(() => {
+                        window.location.reload();
+                    }, 3000);
+                } else {
+                    showStatusMessage('Ошибка при обновлении каталога: ' + data.error, 'error');
+                    updateButton.disabled = false;
+                }
+            } catch (error) {
+                if (error.message.includes('Failed to fetch')) {
+                    showStatusMessage('Потеряна связь с сервером. Подождите, идет перезапуск...', 'error');
+                    // Пробуем переподключиться через 3 секунды
+                    setTimeout(() => {
+                        window.location.reload();
+                    }, 3000);
+                } else {
+                    showStatusMessage('Ошибка при обновлении каталога: ' + error.message, 'error');
+                    updateButton.disabled = false;
+                }
+            }
+        }
+        
+        function showStatusMessage(message, type) {
+            const statusDiv = document.querySelector('.status-message') || document.createElement('div');
+            statusDiv.className = `status-message ${type}`;
+            statusDiv.textContent = message;
+            statusDiv.style.display = 'block';
+            
+            const controls = document.querySelector('.controls');
+            if (!document.querySelector('.status-message')) {
+                controls.parentNode.insertBefore(statusDiv, controls.nextSibling);
+            }
+            
+            // Скрываем сообщение через 5 секунд
+            setTimeout(() => {
+                statusDiv.style.display = 'none';
+            }, 5000);
+        }
+    </script>
+</body>
+</html> 

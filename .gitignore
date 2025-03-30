@@ -1,0 +1,17 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+
+# Базы данных
+*.db
+
+# Логи
+*.log
+
+# Временные файлы
+catalog.html
+feed_analysis.txt
+
+# XML фид (слишком большой для репозитория)
+catalog_feed.xml 
