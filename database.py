@@ -1,397 +1,538 @@
-import sqlite3
+import psycopg2
+from psycopg2.extras import RealDictCursor
 from typing import List, Dict, Optional
+import logging
 import os
 
 class CatalogDatabase:
-    def __init__(self, db_path: str = "catalog.db"):
-        self.db_path = db_path
-        self.create_tables()
-    
-    def create_tables(self):
-        """Создание таблиц базы данных"""
-        with sqlite3.connect(self.db_path) as conn:
-            cursor = conn.cursor()
+    def __init__(self, dbname='catalog', user='postgres', password='postgres', host='localhost', port=5432):
+        self.conn_params = {
+            'dbname': dbname,
+            'user': user,
+            'password': password,
+            'host': host,
+            'port': port
+        }
+        self._pool = None
+        
+        # Настройка логирования
+        self.logger = logging.getLogger(__name__)
+        self.logger.setLevel(logging.DEBUG)
+        if not self.logger.handlers:
+            handler = logging.StreamHandler()
+            handler.setFormatter(logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s'))
+            self.logger.addHandler(handler)
+        
+        # Инициализация базы данных
+        self._init_database()
+
+    def get_connection(self):
+        """Получение соединения из пула"""
+        if self._pool is None:
+            from psycopg2 import pool
+            self._pool = pool.SimpleConnectionPool(1, 20, **self.conn_params)
+        return self._pool.getconn()
+
+    def put_connection(self, conn):
+        """Возврат соединения в пул"""
+        self._pool.putconn(conn)
+
+    def _init_database(self):
+        """Инициализация базы данных"""
+        self.logger.info("Инициализация базы данных")
+        
+        # Создаем базу данных если её нет
+        try:
+            # Подключаемся к postgres для создания базы
+            conn = psycopg2.connect(
+                dbname='postgres',
+                user=self.conn_params['user'],
+                password=self.conn_params['password'],
+                host=self.conn_params['host']
+            )
+            conn.autocommit = True
+            cur = conn.cursor()
             
-            # Таблица категорий
-            cursor.execute('''
+            # Проверяем существование базы
+            cur.execute("SELECT 1 FROM pg_database WHERE datname = %s", (self.conn_params['dbname'],))
+            if not cur.fetchone():
+                # Создаем базу данных
+                cur.execute(f"CREATE DATABASE {self.conn_params['dbname']}")
+            
+            cur.close()
+            conn.close()
+        except Exception as e:
+            self.logger.error(f"Ошибка при создании базы данных: {str(e)}")
+            raise
+
+        try:
+            # Подключаемся к нашей базе и создаем таблицы
+            conn = self.get_connection()
+            cur = conn.cursor()
+            
+            # Создаем расширение для полнотекстового поиска
+            cur.execute('CREATE EXTENSION IF NOT EXISTS pg_trgm')
+            
+            # Создаем таблицы
+            cur.execute('''
                 CREATE TABLE IF NOT EXISTS categories (
                     id INTEGER PRIMARY KEY,
-                    name TEXT NOT NULL,
-                    parent_id INTEGER,
-                    FOREIGN KEY (parent_id) REFERENCES categories (id)
+                    parent_id INTEGER REFERENCES categories(id),
+                    name TEXT NOT NULL
                 )
             ''')
             
-            # Таблица товаров
-            cursor.execute('''
+            cur.execute('''
                 CREATE TABLE IF NOT EXISTS products (
-                    id INTEGER PRIMARY KEY AUTOINCREMENT,
-                    article TEXT UNIQUE,
+                    id TEXT PRIMARY KEY,
+                    article TEXT NOT NULL,
                     name TEXT NOT NULL,
-                    price REAL NOT NULL,
-                    url TEXT NOT NULL
+                    price NUMERIC(10,2) NOT NULL,
+                    url TEXT,
+                    picture TEXT,
+                    has_categories BOOLEAN DEFAULT FALSE,
+                    search_vector tsvector GENERATED ALWAYS AS (
+                        setweight(to_tsvector('russian', coalesce(article,'')), 'A') ||
+                        setweight(to_tsvector('russian', coalesce(name,'')), 'B')
+                    ) STORED
                 )
             ''')
             
-            # Создаем виртуальную FTS таблицу для поиска по товарам
-            cursor.execute('''
-                CREATE VIRTUAL TABLE IF NOT EXISTS products_fts USING fts5(
-                    article,
-                    name,
-                    content='products',
-                    content_rowid='id'
-                )
-            ''')
-            
-            # Создаем триггеры для синхронизации FTS таблицы
-            cursor.execute('''
-                CREATE TRIGGER IF NOT EXISTS products_ai AFTER INSERT ON products BEGIN
-                    INSERT INTO products_fts(rowid, article, name) VALUES (new.id, new.article, new.name);
-                END;
-            ''')
-            
-            cursor.execute('''
-                CREATE TRIGGER IF NOT EXISTS products_ad AFTER DELETE ON products BEGIN
-                    INSERT INTO products_fts(products_fts, rowid, article, name) VALUES('delete', old.id, old.article, old.name);
-                END;
-            ''')
-            
-            cursor.execute('''
-                CREATE TRIGGER IF NOT EXISTS products_au AFTER UPDATE ON products BEGIN
-                    INSERT INTO products_fts(products_fts, rowid, article, name) VALUES('delete', old.id, old.article, old.name);
-                    INSERT INTO products_fts(rowid, article, name) VALUES (new.id, new.article, new.name);
-                END;
-            ''')
-            
-            # Таблица изображений товаров
-            cursor.execute('''
-                CREATE TABLE IF NOT EXISTS product_images (
-                    id INTEGER PRIMARY KEY AUTOINCREMENT,
-                    product_id INTEGER,
-                    image_url TEXT NOT NULL,
-                    FOREIGN KEY (product_id) REFERENCES products (id)
-                )
-            ''')
-            
-            # Таблица связей товаров с категориями
-            cursor.execute('''
+            cur.execute('''
                 CREATE TABLE IF NOT EXISTS product_categories (
-                    product_id INTEGER,
-                    category_id INTEGER,
-                    PRIMARY KEY (product_id, category_id),
-                    FOREIGN KEY (product_id) REFERENCES products (id),
-                    FOREIGN KEY (category_id) REFERENCES categories (id)
+                    product_id TEXT REFERENCES products(id) ON DELETE CASCADE,
+                    category_id INTEGER REFERENCES categories(id) ON DELETE CASCADE,
+                    PRIMARY KEY (product_id, category_id)
                 )
             ''')
             
+            # Создаем индексы
+            cur.execute('CREATE INDEX IF NOT EXISTS idx_products_article ON products(article)')
+            cur.execute('CREATE INDEX IF NOT EXISTS idx_products_name ON products(name)')
+            cur.execute('CREATE INDEX IF NOT EXISTS idx_products_has_categories ON products(has_categories)')
+            cur.execute('CREATE INDEX IF NOT EXISTS idx_product_categories_category ON product_categories(category_id)')
+            cur.execute('CREATE INDEX IF NOT EXISTS idx_products_search ON products USING GIN(search_vector)')
+            
             conn.commit()
-    
-    def clear_data(self):
-        """Очистка всех таблиц"""
-        with sqlite3.connect(self.db_path) as conn:
-            cursor = conn.cursor()
-            cursor.execute("DELETE FROM product_categories")
-            cursor.execute("DELETE FROM product_images")
-            cursor.execute("DELETE FROM products_fts")
-            cursor.execute("DELETE FROM products")
-            cursor.execute("DELETE FROM categories")
-            conn.commit()
-    
+            self.logger.info("Инициализация базы данных успешно завершена")
+            
+        except Exception as e:
+            self.logger.error(f"Ошибка при инициализации базы данных: {str(e)}")
+            conn.rollback()
+            raise
+        finally:
+            cur.close()
+            self.put_connection(conn)
+
+    def close(self):
+        """Закрытие пула соединений"""
+        if self._pool is not None:
+            self._pool.closeall()
+            self._pool = None
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, exc_type, exc_val, exc_tb):
+        self.close()
+
     def add_category(self, category_id: int, name: str, parent_id: Optional[int] = None):
         """Добавление категории"""
-        with sqlite3.connect(self.db_path) as conn:
-            cursor = conn.cursor()
-            cursor.execute(
-                "INSERT OR REPLACE INTO categories (id, name, parent_id) VALUES (?, ?, ?)",
+        conn = self.get_connection()
+        try:
+            cur = conn.cursor()
+            self.logger.debug(f"Добавляем категорию {category_id}: {name}")
+            cur.execute(
+                'INSERT INTO categories (id, name, parent_id) VALUES (%s, %s, %s) ON CONFLICT (id) DO UPDATE SET name = EXCLUDED.name, parent_id = EXCLUDED.parent_id',
                 (category_id, name, parent_id)
             )
-    
-    def add_product(self, article: str, name: str, price: float, url: str, 
-                   category_ids: List[int], images: List[str]):
+            conn.commit()
+        except Exception as e:
+            self.logger.error(f"Ошибка при добавлении категории {category_id}: {str(e)}")
+            conn.rollback()
+            raise
+        finally:
+            cur.close()
+            self.put_connection(conn)
+
+    def add_product(self, product_id: str, article: str, name: str, price: float, 
+                   url: str, picture: Optional[str] = None, category_ids: List[int] = None):
         """Добавление товара"""
-        with sqlite3.connect(self.db_path) as conn:
-            cursor = conn.cursor()
+        conn = self.get_connection()
+        try:
+            cur = conn.cursor()
+            self.logger.debug(f"Добавляем товар {product_id}")
             
             # Добавляем товар
-            cursor.execute(
-                "INSERT OR REPLACE INTO products (article, name, price, url) VALUES (?, ?, ?, ?)",
-                (article, name, price, url)
+            has_categories = bool(category_ids)
+            cur.execute(
+                '''
+                INSERT INTO products (id, article, name, price, url, picture, has_categories) 
+                VALUES (%s, %s, %s, %s, %s, %s, %s)
+                ON CONFLICT (id) DO UPDATE SET 
+                    article = EXCLUDED.article,
+                    name = EXCLUDED.name,
+                    price = EXCLUDED.price,
+                    url = EXCLUDED.url,
+                    picture = EXCLUDED.picture,
+                    has_categories = EXCLUDED.has_categories
+                ''',
+                (product_id, article, name, price, url, picture, has_categories)
             )
-            product_id = cursor.lastrowid
             
-            # Добавляем изображения
-            for image_url in images:
-                cursor.execute(
-                    "INSERT INTO product_images (product_id, image_url) VALUES (?, ?)",
-                    (product_id, image_url)
+            if category_ids:
+                # Удаляем старые связи и добавляем новые
+                cur.execute('DELETE FROM product_categories WHERE product_id = %s', (product_id,))
+                cur.executemany(
+                    'INSERT INTO product_categories (product_id, category_id) VALUES (%s, %s)',
+                    [(product_id, cat_id) for cat_id in category_ids]
                 )
             
-            # Добавляем связи с категориями
-            for category_id in category_ids:
-                cursor.execute(
-                    "INSERT OR REPLACE INTO product_categories (product_id, category_id) VALUES (?, ?)",
-                    (product_id, category_id)
-                )
-    
-    def get_category_tree(self) -> Dict:
-        """Получение дерева категорий с количеством товаров"""
-        with sqlite3.connect(self.db_path) as conn:
-            conn.row_factory = sqlite3.Row
-            cursor = conn.cursor()
-            
-            # Получаем все категории с их прямыми товарами
-            cursor.execute("""
-                WITH RECURSIVE category_tree AS (
-                    -- Базовый случай: все категории с их прямыми товарами
-                    SELECT 
-                        c.id,
-                        c.name,
-                        c.parent_id,
-                        COUNT(DISTINCT pc.product_id) as direct_product_count
-                    FROM categories c
-                    LEFT JOIN product_categories pc ON c.id = pc.category_id
-                    GROUP BY c.id
-                    
-                    UNION ALL
-                    
-                    -- Рекурсивная часть: добавляем товары из подкатегорий
-                    SELECT 
-                        p.id,
-                        p.name,
-                        p.parent_id,
-                        ct.direct_product_count
-                    FROM categories p
-                    JOIN category_tree ct ON p.id = ct.parent_id
-                ),
-                category_totals AS (
-                    -- Суммируем количество товаров для каждой категории и её подкатегорий
-                    SELECT 
-                        ct.id,
-                        ct.name,
-                        ct.parent_id,
-                        SUM(ct.direct_product_count) as total_products
-                    FROM category_tree ct
-                    GROUP BY ct.id
-                )
-                SELECT 
-                    id,
-                    name,
-                    parent_id,
-                    total_products as product_count
-                FROM category_totals
-                ORDER BY id
-            """)
-            
-            categories = {}
-            for row in cursor.fetchall():
-                categories[row['id']] = {
-                    'id': row['id'],
-                    'name': row['name'],
-                    'parent_id': row['parent_id'],
-                    'product_count': row['product_count'],
-                    'children': []
-                }
-            
-            # Строим дерево
-            root = {}
-            for cat_id, cat_data in categories.items():
-                if cat_data['parent_id'] is None:
-                    root[cat_id] = cat_data
-                else:
-                    parent = categories.get(cat_data['parent_id'])
-                    if parent:
-                        parent['children'].append(cat_data)
-            
-            return root
-    
-    def get_category_path(self, category_id: int) -> List[Dict]:
-        """Получение пути категории от корня до указанной категории"""
-        with sqlite3.connect(self.db_path) as conn:
-            conn.row_factory = sqlite3.Row
-            cursor = conn.cursor()
-            
-            cursor.execute("""
-                WITH RECURSIVE category_path AS (
-                    -- Базовый случай: начальная категория
-                    SELECT id, name, parent_id, 1 as level
-                    FROM categories
-                    WHERE id = ?
-                    
-                    UNION ALL
-                    
-                    -- Рекурсивная часть: родительские категории
-                    SELECT c.id, c.name, c.parent_id, cp.level + 1
-                    FROM categories c
-                    JOIN category_path cp ON c.id = cp.parent_id
-                )
-                SELECT id, name
-                FROM category_path
-                ORDER BY level DESC
-            """, (category_id,))
-            
-            return [dict(row) for row in cursor.fetchall()]
+            conn.commit()
+        except Exception as e:
+            self.logger.error(f"Ошибка при добавлении товара {product_id}: {str(e)}")
+            conn.rollback()
+            raise
+        finally:
+            cur.close()
+            self.put_connection(conn)
 
     def get_products_by_category(self, category_id: int, page: int = 1, per_page: int = 30) -> Dict:
         """Получение товаров по категории с пагинацией"""
-        with sqlite3.connect(self.db_path) as conn:
-            conn.row_factory = sqlite3.Row
-            cursor = conn.cursor()
+        conn = self.get_connection()
+        try:
+            cur = conn.cursor(cursor_factory=RealDictCursor)
             
-            # Создаем временную таблицу для хранения всех ID подкатегорий
-            cursor.execute("""
+            # Получаем общее количество товаров
+            cur.execute('''
                 WITH RECURSIVE subcategories AS (
-                    SELECT id FROM categories WHERE id = ?
+                    SELECT id FROM categories WHERE id = %s
                     UNION ALL
                     SELECT c.id FROM categories c
-                    JOIN subcategories sc ON c.parent_id = sc.id
+                    INNER JOIN subcategories sc ON c.parent_id = sc.id
                 )
-                SELECT COUNT(DISTINCT p.id) as total_count
+                SELECT COUNT(DISTINCT p.id) as count
                 FROM products p
                 JOIN product_categories pc ON p.id = pc.product_id
-                WHERE pc.category_id IN subcategories
-            """, (category_id,))
+                WHERE pc.category_id IN (SELECT id FROM subcategories)
+            ''', (category_id,))
             
-            total_count = cursor.fetchone()['total_count']
-            total_pages = (total_count + per_page - 1) // per_page
+            total_count = cur.fetchone()['count']
             
-            # Получаем товары для текущей страницы с путями категорий
-            cursor.execute("""
-                WITH RECURSIVE 
-                subcategories AS (
-                    SELECT id FROM categories WHERE id = ?
+            # Получаем товары для текущей страницы
+            cur.execute('''
+                WITH RECURSIVE subcategories AS (
+                    SELECT id FROM categories WHERE id = %s
                     UNION ALL
                     SELECT c.id FROM categories c
-                    JOIN subcategories sc ON c.parent_id = sc.id
+                    INNER JOIN subcategories sc ON c.parent_id = sc.id
+                ),
+                product_list AS (
+                    SELECT DISTINCT p.*
+                    FROM products p
+                    JOIN product_categories pc ON p.id = pc.product_id
+                    WHERE pc.category_id IN (SELECT id FROM subcategories)
+                    ORDER BY p.id
+                    LIMIT %s OFFSET %s
                 ),
                 category_paths AS (
-                    SELECT 
-                        c.id as category_id,
-                        c.name as category_name,
-                        c.parent_id,
-                        c.name as path
-                    FROM categories c
-                    WHERE c.parent_id IS NULL
-                    
-                    UNION ALL
-                    
-                    SELECT 
-                        c.id,
-                        c.name,
-                        c.parent_id,
-                        cp.path || ' → ' || c.name
-                    FROM categories c
-                    JOIN category_paths cp ON c.parent_id = cp.category_id
+                    SELECT DISTINCT pc.product_id, 
+                           (
+                               WITH RECURSIVE path AS (
+                                   SELECT c.id, c.parent_id, c.name, 1 as level
+                                   FROM categories c
+                                   WHERE c.id = pc.category_id
+                                   UNION ALL
+                                   SELECT c.id, c.parent_id, c.name, p.level + 1
+                                   FROM categories c
+                                   JOIN path p ON c.id = p.parent_id
+                               )
+                               SELECT string_agg(name, ' > ' ORDER BY level DESC)
+                               FROM path
+                           ) as path
+                    FROM product_categories pc
+                    JOIN product_list pl ON pc.product_id = pl.id
+                    GROUP BY pc.product_id, pc.category_id
                 )
-                SELECT DISTINCT 
-                    p.id,
-                    p.article,
-                    p.name,
-                    p.price,
-                    p.url,
-                    GROUP_CONCAT(DISTINCT cp.path) as category_paths,
-                    (SELECT image_url FROM product_images WHERE product_id = p.id LIMIT 1) as picture
-                FROM products p
-                JOIN product_categories pc ON p.id = pc.product_id
-                JOIN category_paths cp ON pc.category_id = cp.category_id
-                WHERE pc.category_id IN subcategories
-                GROUP BY p.id
-                ORDER BY p.id
-                LIMIT ? OFFSET ?
-            """, (category_id, per_page, (page - 1) * per_page))
+                SELECT 
+                    pl.id,
+                    pl.article,
+                    pl.name,
+                    pl.price,
+                    pl.url,
+                    pl.picture,
+                    array_agg(cp.path) as category_paths
+                FROM product_list pl
+                LEFT JOIN category_paths cp ON pl.id = cp.product_id
+                GROUP BY pl.id, pl.article, pl.name, pl.price, pl.url, pl.picture
+                ORDER BY pl.id
+            ''', (category_id, per_page, (page - 1) * per_page))
             
-            products = [{
-                'id': row['id'],
-                'article': row['article'],
-                'name': row['name'],
-                'price': row['price'],
-                'url': row['url'],
-                'picture': row['picture'],
-                'category_paths': row['category_paths'].split(',') if row['category_paths'] else []
-            } for row in cursor.fetchall()]
+            products = cur.fetchall()
             
             return {
-                'products': products,
-                'total_pages': total_pages,
-                'current_page': page,
+                'total_count': total_count,
+                'page': page,
                 'per_page': per_page,
-                'total_count': total_count
+                'total_pages': (total_count + per_page - 1) // per_page,
+                'items': [{
+                    'id': row['id'],
+                    'article': row['article'],
+                    'name': row['name'],
+                    'price': float(row['price']),
+                    'url': row['url'],
+                    'picture': row['picture'],
+                    'category_paths': row['category_paths']
+                } for row in products]
             }
-    
-    def normalize_text(self, text: str) -> str:
-        """Нормализация текста для поиска"""
-        return text.lower().strip()
+            
+        finally:
+            cur.close()
+            self.put_connection(conn)
 
     def search_products(self, query: str) -> List[Dict]:
         """Поиск товаров"""
-        with sqlite3.connect(self.db_path) as conn:
-            conn.row_factory = sqlite3.Row
-            cursor = conn.cursor()
+        conn = self.get_connection()
+        try:
+            cur = conn.cursor(cursor_factory=RealDictCursor)
             
-            cursor.execute("""
+            cur.execute('''
                 WITH RECURSIVE category_paths AS (
-                    SELECT 
-                        c.id as category_id,
-                        c.name as category_name,
-                        c.parent_id,
-                        c.name as path
-                    FROM categories c
-                    WHERE c.parent_id IS NULL
-                    
-                    UNION ALL
-                    
-                    SELECT 
-                        c.id,
-                        c.name,
-                        c.parent_id,
-                        cp.path || ' → ' || c.name
-                    FROM categories c
-                    JOIN category_paths cp ON c.parent_id = cp.category_id
+                    SELECT pc.product_id,
+                           (
+                               WITH RECURSIVE path AS (
+                                   SELECT c.id, c.parent_id, c.name, 1 as level
+                                   FROM categories c
+                                   WHERE c.id = pc.category_id
+                                   UNION ALL
+                                   SELECT c.id, c.parent_id, c.name, p.level + 1
+                                   FROM categories c
+                                   JOIN path p ON c.id = p.parent_id
+                               )
+                               SELECT string_agg(name, ' > ' ORDER BY level DESC)
+                               FROM path
+                           ) as path
+                    FROM product_categories pc
+                ),
+                search_results AS (
+                    SELECT DISTINCT ON (p.id)
+                        p.*,
+                        array_agg(cp.path) OVER (PARTITION BY p.id) as category_paths,
+                        ts_rank(p.search_vector, plainto_tsquery('russian', %s)) as rank
+                    FROM products p
+                    LEFT JOIN category_paths cp ON p.id = cp.product_id
+                    WHERE p.search_vector @@ plainto_tsquery('russian', %s)
+                    ORDER BY p.id, rank DESC
+                    LIMIT 50
                 )
-                SELECT DISTINCT
-                    p.id,
-                    p.article,
-                    p.name,
-                    p.price,
-                    p.url,
-                    GROUP_CONCAT(DISTINCT cp.path) as category_paths,
-                    (SELECT image_url FROM product_images WHERE product_id = p.id LIMIT 1) as picture
-                FROM products p
-                JOIN products_fts f ON p.id = f.rowid
-                JOIN product_categories pc ON p.id = pc.product_id
-                JOIN category_paths cp ON pc.category_id = cp.category_id
-                WHERE products_fts MATCH ?
-                GROUP BY p.id
-                ORDER BY rank
-                LIMIT 50
-            """, (query,))
+                SELECT *
+                FROM search_results
+                ORDER BY rank DESC
+            ''', (query, query))
+            
+            products = cur.fetchall()
             
             return [{
                 'id': row['id'],
                 'article': row['article'],
                 'name': row['name'],
-                'price': row['price'],
+                'price': float(row['price']),
                 'url': row['url'],
                 'picture': row['picture'],
-                'category_paths': row['category_paths'].split(',') if row['category_paths'] else []
-            } for row in cursor.fetchall()]
-    
+                'category_paths': row['category_paths']
+            } for row in products]
+            
+        finally:
+            cur.close()
+            self.put_connection(conn)
+
     def get_statistics(self) -> Dict:
         """Получение статистики каталога"""
-        with sqlite3.connect(self.db_path) as conn:
-            cursor = conn.cursor()
+        conn = self.get_connection()
+        try:
+            cur = conn.cursor(cursor_factory=RealDictCursor)
             
-            # Получаем статистику
-            cursor.execute("""
+            # Общая статистика
+            cur.execute('''
                 SELECT 
-                    (SELECT COUNT(*) FROM categories) as categories_count,
-                    COUNT(*) as products_count,
-                    ROUND(AVG(price), 2) as average_price
-                FROM products
-            """)
+                    (SELECT COUNT(*) FROM categories) as total_categories,
+                    (SELECT COUNT(*) FROM products) as total_products,
+                    (SELECT COUNT(*) FROM products WHERE picture IS NOT NULL) as products_with_images,
+                    (SELECT COUNT(DISTINCT category_id) FROM product_categories) as categories_with_products,
+                    (SELECT AVG(price) FROM products) as average_price,
+                    (SELECT MIN(price) FROM products) as min_price,
+                    (SELECT MAX(price) FROM products) as max_price
+            ''')
             
-            row = cursor.fetchone()
+            stats = cur.fetchone()
+            
+            # Добавляем статистику по категориям верхнего уровня
+            cur.execute('''
+                WITH RECURSIVE subcategories AS (
+                    SELECT c.id, c.name, c.parent_id, 1 as level, ARRAY[c.id] as path
+                    FROM categories c
+                    WHERE c.parent_id IS NULL
+                    
+                    UNION ALL
+                    
+                    SELECT c.id, c.name, c.parent_id, s.level + 1, s.path || c.id
+                    FROM categories c
+                    JOIN subcategories s ON c.parent_id = s.id
+                    WHERE NOT c.id = ANY(s.path)
+                ),
+                category_products AS (
+                    SELECT 
+                        c.id,
+                        COUNT(DISTINCT pc.product_id) as direct_count,
+                        (
+                            WITH RECURSIVE child_categories AS (
+                                SELECT id FROM categories WHERE id = c.id
+                                UNION ALL
+                                SELECT ch.id 
+                                FROM categories ch
+                                JOIN child_categories cc ON ch.parent_id = cc.id
+                            )
+                            SELECT COUNT(DISTINCT pc2.product_id)
+                            FROM product_categories pc2
+                            WHERE pc2.category_id IN (SELECT id FROM child_categories)
+                        ) as product_count
+                    FROM categories c
+                    LEFT JOIN product_categories pc ON c.id = pc.category_id
+                    GROUP BY c.id
+                )
+                SELECT s.id, s.name, s.parent_id, s.level, s.path,
+                       COALESCE(cp.direct_count, 0) as direct_product_count,
+                       COALESCE(cp.product_count, 0) as product_count
+                FROM subcategories s
+                LEFT JOIN category_products cp ON s.id = cp.id
+                ORDER BY s.path;
+            ''')
+            
+            top_categories = cur.fetchall()
+            
             return {
-                'categories_count': row[0],
-                'products_count': row[1],
-                'average_price': row[2] or 0
-            } 
+                'total_categories': stats['total_categories'],
+                'total_products': stats['total_products'],
+                'products_with_images': stats['products_with_images'],
+                'categories_with_products': stats['categories_with_products'],
+                'average_price': round(float(stats['average_price']), 2) if stats['average_price'] else 0,
+                'min_price': round(float(stats['min_price']), 2) if stats['min_price'] else 0,
+                'max_price': round(float(stats['max_price']), 2) if stats['max_price'] else 0,
+                'top_categories': [{
+                    'id': cat['id'],
+                    'name': cat['name'],
+                    'product_count': cat['product_count']
+                } for cat in top_categories]
+            }
+            
+        finally:
+            cur.close()
+            self.put_connection(conn)
+
+    def get_category_tree(self) -> List[Dict]:
+        """Получение дерева категорий"""
+        conn = self.get_connection()
+        try:
+            cur = conn.cursor(cursor_factory=RealDictCursor)
+            
+            # Получаем все категории с количеством товаров, включая подкатегории
+            cur.execute('''
+                WITH RECURSIVE subcategories AS (
+                    SELECT c.id, c.name, c.parent_id, 1 as level, ARRAY[c.id] as path
+                    FROM categories c
+                    WHERE c.parent_id IS NULL
+                    
+                    UNION ALL
+                    
+                    SELECT c.id, c.name, c.parent_id, s.level + 1, s.path || c.id
+                    FROM categories c
+                    JOIN subcategories s ON c.parent_id = s.id
+                    WHERE NOT c.id = ANY(s.path)
+                ),
+                category_products AS (
+                    SELECT 
+                        c.id,
+                        COUNT(DISTINCT CASE WHEN pc.product_id IS NOT NULL AND p.id IS NOT NULL THEN pc.product_id END) as direct_count,
+                        (
+                            WITH RECURSIVE child_categories AS (
+                                SELECT id FROM categories WHERE id = c.id
+                                UNION ALL
+                                SELECT ch.id 
+                                FROM categories ch
+                                JOIN child_categories cc ON ch.parent_id = cc.id
+                            )
+                            SELECT COUNT(DISTINCT CASE WHEN pc2.product_id IS NOT NULL AND p2.id IS NOT NULL THEN pc2.product_id END)
+                            FROM product_categories pc2
+                            LEFT JOIN products p2 ON pc2.product_id = p2.id
+                            WHERE pc2.category_id IN (SELECT id FROM child_categories)
+                        ) as product_count,
+                        array_agg(DISTINCT CASE WHEN pc.product_id IS NOT NULL AND p.id IS NOT NULL THEN pc.product_id END) FILTER (WHERE pc.product_id IS NOT NULL AND p.id IS NOT NULL) as product_ids
+                    FROM categories c
+                    LEFT JOIN product_categories pc ON c.id = pc.category_id
+                    LEFT JOIN products p ON pc.product_id = p.id
+                    GROUP BY c.id
+                )
+                SELECT s.id, s.name, s.parent_id, s.level, s.path,
+                       COALESCE(cp.direct_count, 0) as direct_product_count,
+                       COALESCE(cp.product_count, 0) as product_count,
+                       cp.product_ids
+                FROM subcategories s
+                LEFT JOIN category_products cp ON s.id = cp.id
+                ORDER BY s.path;
+            ''')
+            
+            categories = cur.fetchall()
+            
+            # Создаем словарь для быстрого доступа к категориям
+            categories_dict = {cat['id']: cat for cat in categories}
+            
+            # Функция для получения всех родительских категорий
+            def get_parent_categories(category_id):
+                parents = []
+                current_id = category_id
+                while current_id in categories_dict and categories_dict[current_id]['parent_id']:
+                    parent_id = categories_dict[current_id]['parent_id']
+                    if parent_id in categories_dict:
+                        parents.append(parent_id)
+                        current_id = parent_id
+                    else:
+                        break
+                return parents
+            
+            # Добавляем продукты в родительские категории
+            for cat in categories:
+                if cat['product_ids'] and cat['product_ids'][0] is not None:  # Проверяем, что есть реальные товары
+                    parent_ids = get_parent_categories(cat['id'])
+                    for parent_id in parent_ids:
+                        if parent_id in categories_dict:
+                            parent = categories_dict[parent_id]
+                            if parent['product_ids'] is None:
+                                parent['product_ids'] = []
+                            elif parent['product_ids'][0] is None:
+                                parent['product_ids'] = []
+                            parent['product_ids'].extend(cat['product_ids'])
+            
+            # Преобразуем плоский список в дерево
+            def build_tree(categories_list, parent_id=None):
+                tree = []
+                for cat in categories_list:
+                    if cat['parent_id'] == parent_id:
+                        children = build_tree(categories_list, cat['id'])
+                        category = {
+                            'id': cat['id'],
+                            'name': cat['name'],
+                            'product_count': len(set(filter(None, cat['product_ids']))) if cat['product_ids'] else 0
+                        }
+                        if children:
+                            category['children'] = children
+                        tree.append(category)
+                return tree
+            
+            # Получаем корневые категории
+            root_categories = build_tree(categories)
+            
+            return root_categories
+            
+        finally:
+            cur.close()
+            self.put_connection(conn) 
