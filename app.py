@@ -1,4 +1,4 @@
-from flask import Flask, jsonify, render_template, request
+from flask import Flask, jsonify, render_template, request, Response
 from database import CatalogDatabase
 from feed_parser import FeedParser
 import os
@@ -9,6 +9,7 @@ import subprocess
 from threading import Timer, Lock
 import time
 import logging
+from functools import wraps
 
 app = Flask(__name__)
 
@@ -41,6 +42,35 @@ DB_PARAMS = {
 
 # Инициализация базы данных
 db = CatalogDatabase(**DB_PARAMS)
+
+# Настройка базовой аутентификации
+def check_auth(username, password):
+    """Проверяет учетные данные пользователя"""
+    return username == os.environ.get('AUTH_USERNAME', 'admin') and password == os.environ.get('AUTH_PASSWORD', 'password')
+
+def authenticate():
+    """Отправляет 401 ответ с запросом базовой аутентификации"""
+    return Response(
+        'Требуется авторизация', 401,
+        {'WWW-Authenticate': 'Basic realm="Login Required"'}
+    )
+
+def requires_auth(f):
+    @wraps(f)
+    def decorated(*args, **kwargs):
+        auth = request.authorization
+        if not auth or not check_auth(auth.username, auth.password):
+            return authenticate()
+        return f(*args, **kwargs)
+    return decorated
+
+# Применяем аутентификацию ко всем маршрутам, кроме API
+@app.before_request
+def before_request():
+    if not request.path.startswith('/api/'):
+        auth = request.authorization
+        if not auth or not check_auth(auth.username, auth.password):
+            return authenticate()
 
 def update_catalog():
     """Обновление каталога из XML-фида"""

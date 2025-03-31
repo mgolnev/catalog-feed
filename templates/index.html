@@ -1,0 +1,246 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Каталог товаров</title>
+    <style>
+        /* Основные стили */
+        html {
+            scroll-behavior: smooth;
+        }
+        
+        body {
+            margin: 0;
+            padding: 0;
+            font-family: Arial, sans-serif;
+            overflow-y: scroll;
+        }
+        
+        /* Стилизация скроллбара */
+        ::-webkit-scrollbar {
+            width: 10px;
+        }
+        
+        ::-webkit-scrollbar-track {
+            background: #f1f1f1;
+            border-radius: 5px;
+        }
+        
+        ::-webkit-scrollbar-thumb {
+            background: #888;
+            border-radius: 5px;
+        }
+        
+        ::-webkit-scrollbar-thumb:hover {
+            background: #555;
+        }
+        
+        /* Контейнер для основного контента */
+        .container {
+            max-width: 1200px;
+            margin: 0 auto;
+            padding: 20px;
+        }
+        
+        /* Стили для категорий */
+        #categories {
+            margin-bottom: 20px;
+        }
+        
+        .category-item {
+            cursor: pointer;
+            padding: 10px;
+            margin: 5px 0;
+            border-radius: 5px;
+            transition: background-color 0.3s;
+        }
+        
+        .category-item:hover {
+            background-color: #f0f0f0;
+        }
+        
+        /* Стили для продуктов */
+        #products {
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(250px, 1fr));
+            gap: 20px;
+            padding: 20px 0;
+        }
+        
+        .product-card {
+            border: 1px solid #ddd;
+            border-radius: 8px;
+            padding: 15px;
+            transition: transform 0.3s;
+        }
+        
+        .product-card:hover {
+            transform: translateY(-5px);
+            box-shadow: 0 5px 15px rgba(0,0,0,0.1);
+        }
+        
+        /* Анимации для плавного появления элементов */
+        @keyframes fadeIn {
+            from { opacity: 0; }
+            to { opacity: 1; }
+        }
+        
+        .fade-in {
+            animation: fadeIn 0.5s ease-in;
+        }
+        
+        /* Адаптивный дизайн */
+        @media (max-width: 768px) {
+            .container {
+                padding: 10px;
+            }
+            
+            #products {
+                grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+            }
+        }
+        
+        /* Стили для хедера */
+        .header {
+            background-color: #f8f9fa;
+            padding: 1rem 0;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+            position: sticky;
+            top: 0;
+            z-index: 1000;
+        }
+        
+        /* Стили для статистики */
+        .statistics {
+            background-color: #fff;
+            padding: 15px;
+            border-radius: 8px;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.05);
+            margin-bottom: 20px;
+        }
+        
+        /* Стили для кнопки прокрутки вверх */
+        .scroll-to-top {
+            position: fixed;
+            bottom: 20px;
+            right: 20px;
+            background-color: #007bff;
+            color: white;
+            width: 40px;
+            height: 40px;
+            border-radius: 50%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            cursor: pointer;
+            opacity: 0;
+            transition: opacity 0.3s;
+            z-index: 1000;
+        }
+        
+        .scroll-to-top.visible {
+            opacity: 1;
+        }
+    </style>
+</head>
+<body>
+    <div class="header">
+        <div class="container">
+            <h1>Каталог товаров</h1>
+        </div>
+    </div>
+
+    <div class="container">
+        <div class="statistics fade-in">
+            <h2>Статистика каталога</h2>
+            <div id="stats"></div>
+        </div>
+
+        <div id="categories" class="fade-in"></div>
+        <div id="products" class="fade-in"></div>
+    </div>
+
+    <div class="scroll-to-top" onclick="scrollToTop()">↑</div>
+
+    <script>
+        // Функция для прокрутки вверх
+        function scrollToTop() {
+            window.scrollTo({
+                top: 0,
+                behavior: 'smooth'
+            });
+        }
+
+        // Показать/скрыть кнопку прокрутки вверх
+        window.addEventListener('scroll', function() {
+            const scrollButton = document.querySelector('.scroll-to-top');
+            if (window.scrollY > 300) {
+                scrollButton.classList.add('visible');
+            } else {
+                scrollButton.classList.remove('visible');
+            }
+        });
+
+        // Загрузка категорий
+        fetch('/api/categories')
+            .then(response => response.json())
+            .then(categories => {
+                const container = document.getElementById('categories');
+                renderCategories(categories, container);
+            })
+            .catch(error => console.error('Error loading categories:', error));
+
+        // Загрузка статистики
+        fetch('/api/statistics')
+            .then(response => response.json())
+            .then(stats => {
+                const container = document.getElementById('stats');
+                renderStatistics(stats, container);
+            })
+            .catch(error => console.error('Error loading statistics:', error));
+
+        // Функция для отображения категорий
+        function renderCategories(categories, container) {
+            container.innerHTML = '';
+            categories.forEach(category => {
+                const div = document.createElement('div');
+                div.className = 'category-item fade-in';
+                div.textContent = `${category.name} (${category.product_count})`;
+                div.onclick = () => loadProducts(category.id);
+                container.appendChild(div);
+            });
+        }
+
+        // Функция для отображения статистики
+        function renderStatistics(stats, container) {
+            container.innerHTML = `
+                <p>Всего категорий: ${stats.total_categories}</p>
+                <p>Всего товаров: ${stats.total_products}</p>
+                <p>Ценовой диапазон: ${stats.price_range.min} - ${stats.price_range.max} руб.</p>
+            `;
+        }
+
+        // Функция для загрузки товаров
+        function loadProducts(categoryId) {
+            fetch(`/api/products?category_id=${categoryId}`)
+                .then(response => response.json())
+                .then(products => {
+                    const container = document.getElementById('products');
+                    container.innerHTML = '';
+                    products.forEach(product => {
+                        const card = document.createElement('div');
+                        card.className = 'product-card fade-in';
+                        card.innerHTML = `
+                            <h3>${product.name}</h3>
+                            <p>Артикул: ${product.article}</p>
+                            <p>Цена: ${product.price} руб.</p>
+                        `;
+                        container.appendChild(card);
+                    });
+                })
+                .catch(error => console.error('Error loading products:', error));
+        }
+    </script>
+</body>
+</html> 
