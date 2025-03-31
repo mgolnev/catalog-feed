@@ -40,8 +40,37 @@ DB_PARAMS = {
     'port': os.getenv('DB_PORT', '5432')
 }
 
-# Инициализация базы данных
-db = CatalogDatabase(**DB_PARAMS)
+# Глобальная переменная для базы данных
+db = None
+
+def init_database(max_retries=5, retry_delay=5):
+    """Инициализация базы данных с повторными попытками"""
+    global db
+    retry_count = 0
+    
+    while retry_count < max_retries:
+        try:
+            logger.info(f"Попытка подключения к базе данных ({retry_count + 1}/{max_retries})...")
+            db = CatalogDatabase(**DB_PARAMS)
+            logger.info("База данных успешно инициализирована")
+            return True
+        except Exception as e:
+            retry_count += 1
+            logger.error(f"Ошибка при подключении к базе данных: {str(e)}")
+            if retry_count < max_retries:
+                logger.info(f"Повторная попытка через {retry_delay} секунд...")
+                time.sleep(retry_delay)
+            else:
+                logger.error("Превышено максимальное количество попыток подключения")
+                return False
+
+def get_db():
+    """Получение экземпляра базы данных"""
+    global db
+    if db is None:
+        if not init_database():
+            raise Exception("Не удалось инициализировать базу данных")
+    return db
 
 # Настройка базовой аутентификации
 def check_auth(username, password):
@@ -71,6 +100,11 @@ def before_request():
         auth = request.authorization
         if not auth or not check_auth(auth.username, auth.password):
             return authenticate()
+    # Проверяем подключение к базе данных
+    try:
+        get_db()
+    except Exception as e:
+        return jsonify({'error': 'Database connection error'}), 500
 
 def update_catalog():
     """Обновление каталога из XML-фида"""
@@ -82,7 +116,7 @@ def update_catalog():
         raise RuntimeError('Обновление каталога уже выполняется')
     
     try:
-        parser = FeedParser(XML_FILE, db)
+        parser = FeedParser(XML_FILE, get_db())
         parser.parse()
     finally:
         update_lock.release()
@@ -100,7 +134,7 @@ def update_catalog_route():
         update_catalog()
         execution_time = (datetime.now() - start_time).total_seconds()
         
-        stats = db.get_statistics()
+        stats = get_db().get_statistics()
         
         return jsonify({
             'success': True,
@@ -125,7 +159,7 @@ def search_api():
         return jsonify([])
     
     try:
-        products = db.search_products(query)
+        products = get_db().search_products(query)
         return jsonify(products)
     except Exception as e:
         return jsonify({'error': str(e)}), 500
@@ -133,12 +167,12 @@ def search_api():
 @app.route('/api/statistics')
 def statistics_api():
     """API для получения статистики каталога"""
-    return jsonify(db.get_statistics())
+    return jsonify(get_db().get_statistics())
 
 @app.route('/api/categories')
 def categories_api():
     """API для получения дерева категорий"""
-    return jsonify(db.get_category_tree())
+    return jsonify(get_db().get_category_tree())
 
 @app.route('/api/products/<category_id>')
 def get_products(category_id):
@@ -154,7 +188,7 @@ def get_products(category_id):
             
         logger.debug(f"Параметры пагинации: page={page}, per_page={per_page}")
         
-        products = db.get_products_by_category(category_id, page, per_page)
+        products = get_db().get_products_by_category(category_id, page, per_page)
         logger.debug(f"Получено {len(products['items'])} товаров")
         
         return jsonify(products)
@@ -173,12 +207,8 @@ def restart_server():
 if __name__ == '__main__':
     try:
         # Инициализируем базу данных
-        try:
-            logger.info("Инициализация базы данных...")
-            db = CatalogDatabase(**DB_PARAMS)
-            logger.info("База данных успешно инициализирована")
-        except Exception as e:
-            logger.error(f"Ошибка при инициализации базы данных: {str(e)}")
+        if not init_database():
+            logger.error("Не удалось инициализировать базу данных")
             sys.exit(1)
         
         # Запускаем сервер
