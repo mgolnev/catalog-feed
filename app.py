@@ -183,7 +183,7 @@ if __name__ == '__main__':
         
         # Запускаем сервер
         logger.info(f"Запуск сервера на порту {PORT}...")
-        app.run(host='localhost', port=PORT, debug=True)
+        app.run(host='0.0.0.0', port=int(os.getenv('PORT', PORT)), debug=False)
     except Exception as e:
         logger.error(f"Критическая ошибка при запуске сервера: {str(e)}")
         sys.exit(1) 
