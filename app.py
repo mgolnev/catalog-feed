@@ -33,11 +33,11 @@ update_lock = Lock()
 
 # Параметры подключения к базе данных
 DB_PARAMS = {
-    'dbname': 'catalog',
-    'user': 'postgres',
-    'password': 'postgres',
-    'host': 'localhost',
-    'port': 5432
+    'dbname': os.getenv('DB_NAME', 'catalog-feed-db'),
+    'user': os.getenv('DB_USER', 'catalog_feed_db_user'),
+    'password': os.getenv('DB_PASSWORD', ''),
+    'host': os.getenv('DB_HOST', 'localhost'),
+    'port': os.getenv('DB_PORT', '5432')
 }
 
 # Инициализация базы данных
