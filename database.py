@@ -41,32 +41,8 @@ class CatalogDatabase:
         """Инициализация базы данных"""
         self.logger.info("Инициализация базы данных")
         
-        # Создаем базу данных если её нет
         try:
-            # Подключаемся к postgres для создания базы
-            conn = psycopg2.connect(
-                dbname='postgres',
-                user=self.conn_params['user'],
-                password=self.conn_params['password'],
-                host=self.conn_params['host']
-            )
-            conn.autocommit = True
-            cur = conn.cursor()
-            
-            # Проверяем существование базы
-            cur.execute("SELECT 1 FROM pg_database WHERE datname = %s", (self.conn_params['dbname'],))
-            if not cur.fetchone():
-                # Создаем базу данных
-                cur.execute(f"CREATE DATABASE {self.conn_params['dbname']}")
-            
-            cur.close()
-            conn.close()
-        except Exception as e:
-            self.logger.error(f"Ошибка при создании базы данных: {str(e)}")
-            raise
-
-        try:
-            # Подключаемся к нашей базе и создаем таблицы
+            # Подключаемся к базе данных
             conn = self.get_connection()
             cur = conn.cursor()
             
@@ -118,11 +94,14 @@ class CatalogDatabase:
             
         except Exception as e:
             self.logger.error(f"Ошибка при инициализации базы данных: {str(e)}")
-            conn.rollback()
+            if 'conn' in locals():
+                conn.rollback()
             raise
         finally:
-            cur.close()
-            self.put_connection(conn)
+            if 'cur' in locals():
+                cur.close()
+            if 'conn' in locals():
+                self.put_connection(conn)
 
     def close(self):
         """Закрытие пула соединений"""
