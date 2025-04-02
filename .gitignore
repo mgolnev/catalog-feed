@@ -14,4 +14,7 @@ catalog.html
 feed_analysis.txt
 
 # XML фид (слишком большой для репозитория)
-catalog_feed.xml 
+catalog_feed.xml
+
+# Переменные окружения
+.env 

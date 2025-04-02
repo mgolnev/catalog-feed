@@ -11,6 +11,10 @@ services:
         fromDatabase:
           name: catalog-db
           property: connectionString
+      - key: AUTH_USERNAME
+        value: admin
+      - key: AUTH_PASSWORD
+        generateValue: true
 
 databases:
   - name: catalog-db

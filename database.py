@@ -11,7 +11,7 @@ class CatalogDatabase:
             'user': user,
             'password': password,
             'host': host,
-            'port': port
+            'port': str(port)  # Сохраняем как строку
         }
         self._pool = None
         
@@ -30,8 +30,27 @@ class CatalogDatabase:
         """Получение соединения из пула"""
         if self._pool is None:
             from psycopg2 import pool
-            self._pool = pool.SimpleConnectionPool(1, 20, **self.conn_params)
-        return self._pool.getconn()
+            
+            # Преобразуем порт в число
+            conn_params = self.conn_params.copy()
+            conn_params['port'] = int(conn_params['port'])
+            
+            self.logger.info(f"Создание пула подключений с параметрами: host={conn_params['host']}, port={conn_params['port']}, dbname={conn_params['dbname']}, user={conn_params['user']}")
+            
+            try:
+                self._pool = pool.SimpleConnectionPool(1, 20, **conn_params)
+                self.logger.info("Пул подключений успешно создан")
+            except Exception as e:
+                self.logger.error(f"Ошибка при создании пула подключений: {str(e)}")
+                raise
+        
+        try:
+            conn = self._pool.getconn()
+            self.logger.info("Получено подключение из пула")
+            return conn
+        except Exception as e:
+            self.logger.error(f"Ошибка при получении подключения из пула: {str(e)}")
+            raise
 
     def put_connection(self, conn):
         """Возврат соединения в пул"""

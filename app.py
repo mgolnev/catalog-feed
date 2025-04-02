@@ -10,6 +10,10 @@ from threading import Timer, Lock
 import time
 import logging
 from functools import wraps
+from dotenv import load_dotenv
+
+# Загружаем переменные окружения из .env
+load_dotenv()
 
 app = Flask(__name__)
 
@@ -32,13 +36,33 @@ PORT = 5003
 update_lock = Lock()
 
 # Параметры подключения к базе данных
-DB_PARAMS = {
-    'dbname': os.getenv('DB_NAME', 'catalog-feed-db'),
-    'user': os.getenv('DB_USER', 'catalog_feed_db_user'),
-    'password': os.getenv('DB_PASSWORD', ''),
-    'host': os.getenv('DB_HOST', 'localhost'),
-    'port': os.getenv('DB_PORT', '5432')
-}
+def get_db_params():
+    """Получение параметров подключения к базе данных"""
+    # Проверяем наличие DATABASE_URL (для Render.com)
+    database_url = os.getenv('DATABASE_URL')
+    if database_url:
+        # Парсим URL подключения к базе данных
+        # Формат: postgres://user:password@host:port/dbname
+        import re
+        match = re.match(r'postgres://([^:]+):([^@]+)@([^:]+):(\d+)/(.+)', database_url)
+        if match:
+            user, password, host, port, dbname = match.groups()
+            return {
+                'dbname': dbname,
+                'user': user,
+                'password': password,
+                'host': host,
+                'port': port
+            }
+    
+    # Если DATABASE_URL не указан, используем отдельные переменные
+    return {
+        'dbname': os.getenv('DB_NAME', 'catalog'),
+        'user': os.getenv('DB_USER', 'postgres'),
+        'password': os.getenv('DB_PASSWORD', 'postgres'),
+        'host': os.getenv('DB_HOST', 'localhost'),
+        'port': os.getenv('DB_PORT', '5432')
+    }
 
 # Глобальная переменная для базы данных
 db = None
@@ -51,7 +75,9 @@ def init_database(max_retries=5, retry_delay=5):
     while retry_count < max_retries:
         try:
             logger.info(f"Попытка подключения к базе данных ({retry_count + 1}/{max_retries})...")
-            db = CatalogDatabase(**DB_PARAMS)
+            db_params = get_db_params()
+            logger.info(f"Параметры подключения: host={db_params['host']}, port={db_params['port']}, dbname={db_params['dbname']}, user={db_params['user']}")
+            db = CatalogDatabase(**db_params)
             logger.info("База данных успешно инициализирована")
             return True
         except Exception as e:
